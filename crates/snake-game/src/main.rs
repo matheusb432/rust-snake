@@ -1,5 +1,6 @@
 use std::{
     io::{self, Write},
+    process::{self, ExitCode, Termination},
     thread,
 };
 
@@ -10,7 +11,8 @@ use crossterm::{
 
 pub const QUIT: char = 'q';
 
-fn main() -> io::Result<()> {
+fn main() -> io::Result<ExitCode> {
+    let game = Game::start()?;
     // TODO: impl the newtypes and instantiate the snek
     // TODO: use Arc<Mutex<T>> ?
     // let mut snake = Snake {hp:};
@@ -19,9 +21,9 @@ fn main() -> io::Result<()> {
     // TODO: use newtype for directional inputs
     let (input_tx, input_rx) = std::sync::mpsc::channel();
 
-    enable_raw_mode()?;
+    // TODO: cleanup once game drop works
     println!("enter move ['{QUIT}' to quit]: ");
-    let input_handle = thread::spawn(move || {
+    thread::spawn(move || {
         loop {
             // TODO: this is blocking. try to have a loop with tx/rx before using async EventStream
             if let Ok(Event::Key(key)) = event::read().inspect_err(|err| {
@@ -33,40 +35,35 @@ fn main() -> io::Result<()> {
             }
         }
     });
-    disable_raw_mode()?;
+    // TODO cleanup once game drop works
+    // disable_raw_mode()?;
 
-    let game_loop_handle = thread::spawn(move || {
-        // TODO: without async i think 2 loops are necessary since input_rx can't listen on a closed channel, review for a simpler solution later
-        loop {
-            println!("receving...");
-            match input_rx.recv() {
-                Ok(key) => match key.code {
-                    arrow_key_code @ (KeyCode::Up
-                    | KeyCode::Down
-                    | KeyCode::Left
-                    | KeyCode::Right) => {
-                        println!("pressed direction: {}", arrow_key_code);
-                    }
-                    KeyCode::Char(QUIT) => break,
-                    _ => {}
-                },
-                Err(err) => {
-                    eprintln!("{}", err);
+    // TODO: without async i think 2 loops are necessary since input_rx can't listen on a closed channel, review for a simpler solution later
+    let exit_code = loop {
+        println!("receiving...");
+        match input_rx.recv() {
+            Ok(key) => match key.code {
+                arrow_key_code @ (KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right) => {
+                    println!("pressed direction: {}", arrow_key_code);
                 }
+                KeyCode::Char(QUIT) => {
+                    break game.exit();
+                }
+                _ => {}
+            },
+            Err(err) => {
+                eprintln!("{}", err);
+                break ExitCode::FAILURE;
             }
         }
-        // snake_hp = snake_hp.saturating_sub(3);
-        // println!("snake_hp: {}", snake_hp);
-        // if snake_hp == 0 {
-        //     break Ok(());
-        // }
-    });
-    let handles = [input_handle, game_loop_handle];
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    };
+    // snake_hp = snake_hp.saturating_sub(3);
+    // println!("snake_hp: {}", snake_hp);
+    // if snake_hp == 0 {
+    //     break Ok(());
+    // }
 
-    Ok(())
+    Ok(exit_code)
 }
 
 // TODO: write and make it receive tx
@@ -121,3 +118,31 @@ mod core {
         Deg0,
     }
 }
+
+struct Game;
+impl Game {
+    pub fn start() -> io::Result<Self> {
+        enable_raw_mode()?;
+        Ok(Self)
+    }
+
+    /// drops `Game`, which in turn calls its `Drop` impl to exit the process
+    pub fn exit(self) -> ExitCode {
+        self.report()
+    }
+}
+impl Drop for Game {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        println!("exiting game...");
+    }
+}
+impl Termination for Game {
+    fn report(self) -> ExitCode {
+        ExitCode::SUCCESS
+    }
+}
+
+// fn exit_game() {
+//     process::exit(ExitCode::SUCCESS);
+// }
