@@ -1,23 +1,31 @@
-use std::io;
+use std::io::{self, Write};
+
+pub const QUIT: &str = "q";
 
 fn main() -> io::Result<()> {
     // TODO: impl the newtypes and instantiate the snek
     // let mut snake = Snake {hp:};
-    let mut snake_hp = 5_u32;
+    // let mut snake_hp = 5_u32;
     loop {
         // TODO: add crossterm to handle input events
-        let _move_to = {
+        print!("enter move ['{QUIT}' to quit]: ");
+        io::stdout().flush()?;
+        let move_to = {
             let mut buffer = String::new();
             io::stdin().read_line(&mut buffer)?;
-            println!("{}", buffer.clone());
-            buffer
+            buffer.trim_end().to_owned()
         };
+        println!("move is: {}", move_to);
 
-        snake_hp = snake_hp.saturating_sub(3);
-        println!("snake_hp: {}", snake_hp);
-        if snake_hp == 0 {
+        if move_to.as_str() == QUIT {
+            println!("bye :j");
             break Ok(());
         }
+        // snake_hp = snake_hp.saturating_sub(3);
+        // println!("snake_hp: {}", snake_hp);
+        // if snake_hp == 0 {
+        //     break Ok(());
+        // }
     }
 }
 
