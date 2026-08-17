@@ -21,7 +21,6 @@ fn main() -> io::Result<ExitCode> {
     // TODO: use newtype for directional inputs
     let (input_tx, input_rx) = std::sync::mpsc::channel();
 
-    // TODO: cleanup once game drop works
     println!("enter move ['{QUIT}' to quit]: ");
     thread::spawn(move || {
         loop {
@@ -35,8 +34,6 @@ fn main() -> io::Result<ExitCode> {
             }
         }
     });
-    // TODO cleanup once game drop works
-    // disable_raw_mode()?;
 
     // TODO: without async i think 2 loops are necessary since input_rx can't listen on a closed channel, review for a simpler solution later
     let exit_code = loop {
@@ -71,7 +68,7 @@ fn main() -> io::Result<ExitCode> {
 
 // TODO: move any 'mod's here to own files or snake-core once they get complex enough
 mod snake {
-    use crate::core::Transform;
+    use crate::core::{Rotation, Transform};
 
     /// snake player
     pub struct Snake {
@@ -95,27 +92,48 @@ mod snake {
     impl SnakeHp {
         pub const ZERO: Self = Self(0);
     }
-}
 
-mod core {
-
-    pub struct Transform {
-        position: Vector2,
-        rotation: Rotation,
-    }
-    // TODO: implement vec floating point calcs
-    /// vector 2 for game coords
-    pub struct Vector2 {
-        x: f32,
-        y: f32,
-    }
-
-    /// actors can only change in 90deg increments. might be better to use a simple 0-3 enum but i want to practice something closer to gamedev engines
-    pub enum Rotation {
+    /// snake can only move in 90 deg increments
+    pub enum SnakeRotation {
         Deg90,
         Deg180,
         Deg270,
         Deg0,
+    }
+    impl From<Rotation> for SnakeRotation {
+        fn from(value: Rotation) -> Self {
+            todo!("implement enum to rotation u16")
+        }
+    }
+}
+
+mod core {
+
+    // TODO: set less permissive access modifiers after abstractions
+    pub struct Transform {
+        pub position: Vector2,
+        pub rotation: Rotation,
+    }
+    // TODO: implement vec floating point calcs
+    /// vector 2 for game coords
+    pub struct Vector2 {
+        pub x: f32,
+        pub y: f32,
+    }
+
+    pub struct Rotation(u16);
+    impl Rotation {
+        // TODO: implement (might be better to be infallible. 750° is fine to be interpreted as 30°)
+        pub fn new(value: u16) -> Self {
+            todo!()
+        }
+    }
+
+    impl Rotation {
+        pub const RIGHT: Rotation = Self(0);
+        pub const DOWN: Rotation = Self(90);
+        pub const LEFT: Rotation = Self(180);
+        pub const UP: Rotation = Self(270);
     }
 }
 
