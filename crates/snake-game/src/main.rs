@@ -21,14 +21,14 @@ fn main() -> io::Result<ExitCode> {
     // TODO: use newtype for directional inputs
     let (input_tx, input_rx) = std::sync::mpsc::channel();
 
-    println!("enter move ['{QUIT}' to quit]: ");
+    println!("\renter move ['{QUIT}' to quit]: ");
     thread::spawn(move || {
         loop {
             // TODO: this is blocking. try to have a loop with tx/rx before using async EventStream
             if let Ok(Event::Key(key)) = event::read().inspect_err(|err| {
-                eprintln!("error on event read: {}", err);
+                // TODO: emit error event. do not print to the tui outside main thread
+                // eprintln!("error on event read: {}", err);
             }) {
-                println!("sending...");
                 // best effort to send key
                 let _ = input_tx.send(key);
             }
@@ -37,11 +37,10 @@ fn main() -> io::Result<ExitCode> {
 
     // TODO: without async i think 2 loops are necessary since input_rx can't listen on a closed channel, review for a simpler solution later
     let exit_code = loop {
-        println!("receiving...");
         match input_rx.recv() {
             Ok(key) => match key.code {
                 arrow_key_code @ (KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right) => {
-                    println!("pressed direction: {}", arrow_key_code);
+                    println!("\rpressed direction: {}", arrow_key_code);
                 }
                 KeyCode::Char(QUIT) => {
                     break game.exit();
@@ -49,7 +48,7 @@ fn main() -> io::Result<ExitCode> {
                 _ => {}
             },
             Err(err) => {
-                eprintln!("{}", err);
+                eprintln!("\r{}", err);
                 break ExitCode::FAILURE;
             }
         }
@@ -152,7 +151,7 @@ impl Game {
 impl Drop for Game {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        println!("exiting game...");
+        println!("\rexiting game...");
     }
 }
 impl Termination for Game {
