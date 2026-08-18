@@ -337,3 +337,7 @@ dependencies = [
 [[package]]
 name = "xtask"
 version = "0.1.0"
+
+[[patch.unused]]
+name = "arca-client"
+version = "0.1.0"

@@ -67,23 +67,34 @@ fn main() -> io::Result<ExitCode> {
 
 // TODO: move any 'mod's here to own files or snake-core once they get complex enough
 mod snake {
+    use std::default;
+
     use crate::core::{Rotation, Transform};
 
     /// snake player
     pub struct Snake {
         hp: SnakeHp,
+        body: SnakeBody,
         transform: Transform,
     }
 
     impl Snake {
+        // pub const DEFAULT_SIZE: ActorSize = ActorSize{
+        //     width
+        // };
+
         pub fn kill(&mut self) {
             self.hp = SnakeHp::ZERO;
         }
 
-        // TODO: create based on `>~~~~~{`
+        // TODO: create based on `>~~{`
         pub fn render_body(&self) -> String {
             todo!()
         }
+    }
+
+    pub enum SnakeError {
+        SizeTooBig { max: u16, actual: u16 },
     }
 
     pub struct SnakeHp(u32);
@@ -92,47 +103,86 @@ mod snake {
         pub const ZERO: Self = Self(0);
     }
 
+    // TODO: make logic to order each snake part
+    /// body that governs which part is head/appendage/tail of the snake.
+    pub struct SnakeBody(Vec<SnakePart>);
+    impl SnakeBody {
+        pub const MAX_SIZE: u16 = 500;
+        pub fn new(size: u16) -> Result<Self, SnakeError> {
+            if size > Self::MAX_SIZE {
+                return Err(SnakeError::SizeTooBig {
+                    max: Self::MAX_SIZE,
+                    actual: size,
+                });
+            }
+            let parts = vec![SnakePart::default(); size.into()];
+            Ok(Self(parts))
+        }
+    }
+
+    /// the snake's body part
+    #[derive(Default, Debug, PartialEq, Eq, Clone)]
+    pub struct SnakePart {
+        /// direction the part is facing
+        rotation: SnakeRotation,
+    }
+
     /// snake can only move in 90 deg increments
+    #[derive(Default, Debug, PartialEq, Eq, Clone)]
     pub enum SnakeRotation {
-        Deg90,
-        Deg180,
-        Deg270,
-        Deg0,
+        #[default]
+        Deg0 = 0,
+        // TODO: how to use u16
+        // Deg0 = 0_u16,
+        Deg90 = 90,
+        Deg180 = 180,
+        Deg270 = 270,
     }
     impl From<Rotation> for SnakeRotation {
-        fn from(value: Rotation) -> Self {
-            todo!("implement enum to rotation u16")
-        }
+        // TODO impl
+        fn from(value: Rotation) -> Self {}
     }
 }
 
 mod core {
-
     // TODO: set less permissive access modifiers after abstractions
+
+    use std::ops::Add;
+
+    #[derive(Default, Debug, PartialEq, Clone)]
     pub struct Transform {
         pub position: Vector2,
         pub rotation: Rotation,
     }
     // TODO: implement vec floating point calcs
     /// vector 2 for game coords
+    #[derive(Default, Debug, PartialEq, Clone)]
     pub struct Vector2 {
         pub x: f32,
         pub y: f32,
     }
 
+    #[repr(transparent)]
+    #[derive(Default, Debug, PartialEq, Eq, Clone)]
     pub struct Rotation(u16);
-    impl Rotation {
-        // TODO: implement (might be better to be infallible. 750° is fine to be interpreted as 30°)
-        pub fn new(value: u16) -> Self {
-            todo!()
-        }
-    }
-
     impl Rotation {
         pub const RIGHT: Rotation = Self(0);
         pub const DOWN: Rotation = Self(90);
         pub const LEFT: Rotation = Self(180);
         pub const UP: Rotation = Self(270);
+        pub const DEGREES_UPPER: u16 = 360;
+        // TODO: implement (might be better to be infallible. 750° is fine to be interpreted as 30°)
+        pub fn new(value: u16) -> Self {
+            Self(value.rem_euclid(Self::DEGREES_UPPER))
+        }
+
+        pub fn rotate(self, rotation: Rotation) -> Self {
+            Self::new(self.into_inner() + rotation.into_inner())
+        }
+
+        pub fn into_inner(self) -> u16 {
+            self.0
+        }
     }
 }
 
@@ -159,7 +209,3 @@ impl Termination for Game {
         ExitCode::SUCCESS
     }
 }
-
-// fn exit_game() {
-//     process::exit(ExitCode::SUCCESS);
-// }
