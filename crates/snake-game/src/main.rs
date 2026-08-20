@@ -72,6 +72,7 @@ mod snake {
     use crate::core::{Rotation, Transform};
 
     /// snake player
+    #[derive(Debug)]
     pub struct Snake {
         hp: SnakeHp,
         body: SnakeBody,
@@ -79,9 +80,15 @@ mod snake {
     }
 
     impl Snake {
-        // pub const DEFAULT_SIZE: ActorSize = ActorSize{
-        //     width
-        // };
+        // TODO: impl
+        pub fn spawn() -> Self {
+            let hp = SnakeHp::default();
+            Self {
+                hp,
+                body: SnakeBody::from_hp(hp),
+                transform: Transform::default(),
+            }
+        }
 
         pub fn kill(&mut self) {
             self.hp = SnakeHp::ZERO;
@@ -91,32 +98,56 @@ mod snake {
         pub fn render_body(&self) -> String {
             todo!()
         }
+
+        fn compute_parts_size(&self) {}
     }
 
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub enum SnakeError {
         SizeTooBig { max: u16, actual: u16 },
     }
 
-    pub struct SnakeHp(u32);
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub struct SnakeHp(u16);
 
     impl SnakeHp {
         pub const ZERO: Self = Self(0);
+        pub const MIN_VALUE: u16 = 4;
+        pub fn into_inner(self) -> u16 {
+            self.0
+        }
+    }
+    impl Default for SnakeHp {
+        fn default() -> Self {
+            Self(Self::MIN_VALUE)
+        }
     }
 
     // TODO: make logic to order each snake part
     /// body that governs which part is head/appendage/tail of the snake.
+    #[derive(Debug, PartialEq, Eq)]
     pub struct SnakeBody(Vec<SnakePart>);
     impl SnakeBody {
         pub const MAX_SIZE: u16 = 500;
-        pub fn new(size: u16) -> Result<Self, SnakeError> {
+        pub fn from_hp(hp: SnakeHp) -> Self {
+            Self::parts_from_size(hp.into_inner())
+        }
+
+        pub fn try_new(size: u16) -> Result<Self, SnakeError> {
             if size > Self::MAX_SIZE {
                 return Err(SnakeError::SizeTooBig {
                     max: Self::MAX_SIZE,
                     actual: size,
                 });
             }
-            let parts = vec![SnakePart::default(); size.into()];
-            Ok(Self(parts))
+
+            Ok(Self::parts_from_size(size))
+        }
+
+        // TODO: make fns to bump parts and mutate by position (to rotate the snek)
+
+        fn parts_from_size(size: u16) -> SnakeBody {
+            Self(vec![SnakePart::default(); size.into()])
         }
     }
 
@@ -139,8 +170,17 @@ mod snake {
         Deg270 = 270,
     }
     impl From<Rotation> for SnakeRotation {
-        // TODO impl
-        fn from(value: Rotation) -> Self {}
+        // TODO: remove if it does not make sense
+        fn from(value: Rotation) -> Self {
+            match value.into_inner() {
+                0..=89 => Self::Deg0,
+                90..=179 => Self::Deg90,
+                180..=269 => Self::Deg180,
+                270 => Self::Deg270,
+                // TODO: return err
+                _ => panic!("invalid rotation"),
+            }
+        }
     }
 }
 
@@ -207,5 +247,18 @@ impl Drop for Game {
 impl Termination for Game {
     fn report(self) -> ExitCode {
         ExitCode::SUCCESS
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroI64;
+
+    #[test]
+    fn some_test() {
+        let nzu: NonZeroI64 = 5.try_into().unwrap();
+        let my_i: i64 = nzu.into();
+
+        assert_eq!(5, my_i);
     }
 }
