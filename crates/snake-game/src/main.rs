@@ -10,7 +10,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 
-use crate::input::InputKey;
+use crate::{core::Rotation, input::InputKey, snake::Snake};
 
 pub const QUIT: char = 'q';
 
@@ -19,6 +19,7 @@ fn main() -> io::Result<ExitCode> {
     // TODO: impl the newtypes and instantiate the snek
     // TODO: use Arc<Mutex<T>> ?
     // let mut snake = Snake {hp:};
+    let mut snake = Snake::spawn();
     // let mut snake_hp = 5_u32;
 
     // TODO: use newtype for directional inputs
@@ -27,7 +28,6 @@ fn main() -> io::Result<ExitCode> {
     println!("\renter move ['{QUIT}' to quit]: ");
     thread::spawn(move || {
         loop {
-            // TODO: this is blocking. try to have a loop with tx/rx before using async EventStream
             if let Ok(Event::Key(key)) = event::read().inspect_err(|err| {
                 // TODO: emit error event. do not print to the tui outside main thread
                 // eprintln!("error on event read: {}", err);
@@ -38,25 +38,29 @@ fn main() -> io::Result<ExitCode> {
         }
     });
 
-    // TODO: without async i think 2 loops are necessary since input_rx can't listen on a closed channel, review for a simpler solution later
     let exit_code = loop {
-        match input_rx.try_recv() {
+        let input_key: Option<InputKey> = match input_rx.try_recv() {
             Ok(key) => {
-                if let Some(input_key) = InputKey::from_keycode(key.code) {
-                    println!("\rpressed direction: {}", input_key);
-                }
-                match key.code {
-                    KeyCode::Char(QUIT) => {
-                        break game.exit();
+                if let Some(input_keycode) = InputKey::from_keycode(key.code) {
+                    Some(input_keycode)
+                } else {
+                    match key.code {
+                        KeyCode::Char(QUIT) => break game.exit(),
+                        _ => None,
                     }
-                    _ => {}
                 }
             }
-            Err(err) if err == mpsc::TryRecvError::Empty => (),
+            Err(mpsc::TryRecvError::Empty) => None,
             Err(err) => {
                 eprintln!("\r{}", err);
                 break ExitCode::FAILURE;
             }
+        };
+        if let Some(input_key) = input_key {
+            println!("\rmove: {}", input_key);
+            // TODO: move snake head to see different facing direction. also obv do not abbreviate `shd` after debugging
+            let shd = snake.head_direction();
+            println!("\rsnake head direction: {}", shd.into_inner());
         }
     };
     // snake_hp = snake_hp.saturating_sub(3);
@@ -75,7 +79,10 @@ fn main() -> io::Result<ExitCode> {
 mod snake {
     use std::default;
 
-    use crate::core::{Rotation, Transform};
+    use crate::{
+        core::{Rotation, Transform},
+        input::InputKey,
+    };
 
     /// snake player
     #[derive(Debug)]
@@ -103,6 +110,16 @@ mod snake {
         // TODO: create based on `>~~{`
         pub fn render_body(&self) -> String {
             todo!()
+        }
+
+        pub fn move_to(&mut self, input: InputKey) {
+            // TODO: impl move logic by rotating snek head
+            todo!()
+        }
+
+        /// direction the snake's head is facing at, dictated by it's rotation
+        pub fn head_direction(&self) -> SnakeRotation {
+            self.transform.rotation.into()
         }
 
         fn compute_parts_size(&self) {}
@@ -165,7 +182,8 @@ mod snake {
     }
 
     /// snake can only move in 90 deg increments
-    #[derive(Default, Debug, PartialEq, Eq, Clone)]
+    #[repr(u16)]
+    #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
     pub enum SnakeRotation {
         #[default]
         Deg0 = 0,
@@ -174,6 +192,11 @@ mod snake {
         Deg90 = 90,
         Deg180 = 180,
         Deg270 = 270,
+    }
+    impl SnakeRotation {
+        pub fn into_inner(self) -> u16 {
+            self as u16
+        }
     }
     impl From<Rotation> for SnakeRotation {
         // TODO: remove if it does not make sense
@@ -186,6 +209,11 @@ mod snake {
                 // TODO: return err
                 _ => panic!("invalid rotation"),
             }
+        }
+    }
+    impl From<SnakeRotation> for Rotation {
+        fn from(value: SnakeRotation) -> Self {
+            Self::new(value.into_inner())
         }
     }
 }
@@ -202,14 +230,13 @@ mod core {
     }
     // TODO: implement vec floating point calcs
     /// vector 2 for game coords
-    #[derive(Default, Debug, PartialEq, Clone)]
+    #[derive(Default, Debug, PartialEq, Clone, Copy)]
     pub struct Vector2 {
         pub x: f32,
         pub y: f32,
     }
 
-    #[repr(transparent)]
-    #[derive(Default, Debug, PartialEq, Eq, Clone)]
+    #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
     pub struct Rotation(u16);
     impl Rotation {
         pub const RIGHT: Rotation = Self(0);
