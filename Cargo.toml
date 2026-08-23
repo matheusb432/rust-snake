@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/snake-core","crates/snake-game", "xtask"]
+members = ["crates/snake-core","crates/snake-game"]
 
 
 [workspace.dependencies]
