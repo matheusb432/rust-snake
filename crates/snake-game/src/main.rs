@@ -1,6 +1,7 @@
 use std::{
-    io::{self, Write},
-    process::{self, ExitCode, Termination},
+    io::{self},
+    process::{ExitCode, Termination},
+    sync::mpsc,
     thread,
 };
 
@@ -8,6 +9,8 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+
+use crate::input::InputKey;
 
 pub const QUIT: char = 'q';
 
@@ -37,16 +40,19 @@ fn main() -> io::Result<ExitCode> {
 
     // TODO: without async i think 2 loops are necessary since input_rx can't listen on a closed channel, review for a simpler solution later
     let exit_code = loop {
-        match input_rx.recv() {
-            Ok(key) => match key.code {
-                arrow_key_code @ (KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right) => {
-                    println!("\rpressed direction: {}", arrow_key_code);
+        match input_rx.try_recv() {
+            Ok(key) => {
+                if let Some(input_key) = InputKey::from_keycode(key.code) {
+                    println!("\rpressed direction: {}", input_key);
                 }
-                KeyCode::Char(QUIT) => {
-                    break game.exit();
+                match key.code {
+                    KeyCode::Char(QUIT) => {
+                        break game.exit();
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
+            Err(err) if err == mpsc::TryRecvError::Empty => (),
             Err(err) => {
                 eprintln!("\r{}", err);
                 break ExitCode::FAILURE;
@@ -222,6 +228,41 @@ mod core {
 
         pub fn into_inner(self) -> u16 {
             self.0
+        }
+    }
+}
+
+mod input {
+    use crossterm::event::KeyCode;
+
+    #[derive(Debug, Eq, PartialEq, Clone, Copy)]
+    pub enum InputKey {
+        Up,
+        Down,
+        Left,
+        Right,
+    }
+
+    impl std::fmt::Display for InputKey {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Up => write!(f, "Up"),
+                Self::Down => write!(f, "Down"),
+                Self::Left => write!(f, "Left"),
+                Self::Right => write!(f, "Right"),
+            }
+        }
+    }
+
+    impl InputKey {
+        pub fn from_keycode(key_code: KeyCode) -> Option<Self> {
+            match key_code {
+                KeyCode::Up => Some(InputKey::Up),
+                KeyCode::Down => Some(InputKey::Down),
+                KeyCode::Left => Some(InputKey::Left),
+                KeyCode::Right => Some(InputKey::Right),
+                _ => None,
+            }
         }
     }
 }
