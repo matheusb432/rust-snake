@@ -266,6 +266,7 @@ name = "snake-game"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "snake-core",
 ]
 
 [[package]]

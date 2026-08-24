@@ -9,8 +9,8 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-
-use crate::{core::Rotation, input::InputKey, snake::Snake};
+use snake_core::input::InputKey;
+use snake_core::models::snake::Snake;
 
 pub const QUIT: char = 'q';
 
@@ -28,10 +28,7 @@ fn main() -> io::Result<ExitCode> {
     println!("\renter move ['{QUIT}' to quit]: ");
     thread::spawn(move || {
         loop {
-            if let Ok(Event::Key(key)) = event::read().inspect_err(|err| {
-                // TODO: emit error event. do not print to the tui outside main thread
-                // eprintln!("error on event read: {}", err);
-            }) {
+            if let Ok(Event::Key(key)) = event::read() {
                 // best effort to send key
                 let _ = input_tx.send(key);
             }
@@ -41,7 +38,7 @@ fn main() -> io::Result<ExitCode> {
     let exit_code = loop {
         let input_key: Option<InputKey> = match input_rx.try_recv() {
             Ok(key) => {
-                if let Some(input_keycode) = InputKey::from_keycode(key.code) {
+                if let Some(input_keycode) = input_from_keycode(key.code) {
                     Some(input_keycode)
                 } else {
                     match key.code {
@@ -58,7 +55,7 @@ fn main() -> io::Result<ExitCode> {
         };
         if let Some(input_key) = input_key {
             println!("\rmove: {}", input_key);
-            // TODO: move snake head to see different facing direction. also obv do not abbreviate `shd` after debugging
+            snake.move_to(input_key);
             let shd = snake.head_direction();
             println!("\rsnake head direction: {}", shd.into_inner());
         }
@@ -72,225 +69,13 @@ fn main() -> io::Result<ExitCode> {
     Ok(exit_code)
 }
 
-// TODO: write and make it receive tx
-// fn handle_inputs(...)
-
-// TODO: move any 'mod's here to own files or snake-core once they get complex enough
-mod snake {
-    use std::default;
-
-    use crate::{
-        core::{Rotation, Transform},
-        input::InputKey,
-    };
-
-    /// snake player
-    #[derive(Debug)]
-    pub struct Snake {
-        hp: SnakeHp,
-        body: SnakeBody,
-        transform: Transform,
-    }
-
-    impl Snake {
-        // TODO: impl
-        pub fn spawn() -> Self {
-            let hp = SnakeHp::default();
-            Self {
-                hp,
-                body: SnakeBody::from_hp(hp),
-                transform: Transform::default(),
-            }
-        }
-
-        pub fn kill(&mut self) {
-            self.hp = SnakeHp::ZERO;
-        }
-
-        // TODO: create based on `>~~{`
-        pub fn render_body(&self) -> String {
-            todo!()
-        }
-
-        pub fn move_to(&mut self, input: InputKey) {
-            // TODO: impl move logic by rotating snek head
-            todo!()
-        }
-
-        /// direction the snake's head is facing at, dictated by it's rotation
-        pub fn head_direction(&self) -> SnakeRotation {
-            self.transform.rotation.into()
-        }
-
-        fn compute_parts_size(&self) {}
-    }
-
-    #[derive(Debug, PartialEq, Eq, Clone)]
-    pub enum SnakeError {
-        SizeTooBig { max: u16, actual: u16 },
-    }
-
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct SnakeHp(u16);
-
-    impl SnakeHp {
-        pub const ZERO: Self = Self(0);
-        pub const MIN_VALUE: u16 = 4;
-        pub fn into_inner(self) -> u16 {
-            self.0
-        }
-    }
-    impl Default for SnakeHp {
-        fn default() -> Self {
-            Self(Self::MIN_VALUE)
-        }
-    }
-
-    // TODO: make logic to order each snake part
-    /// body that governs which part is head/appendage/tail of the snake.
-    #[derive(Debug, PartialEq, Eq)]
-    pub struct SnakeBody(Vec<SnakePart>);
-    impl SnakeBody {
-        pub const MAX_SIZE: u16 = 500;
-        pub fn from_hp(hp: SnakeHp) -> Self {
-            Self::parts_from_size(hp.into_inner())
-        }
-
-        pub fn try_new(size: u16) -> Result<Self, SnakeError> {
-            if size > Self::MAX_SIZE {
-                return Err(SnakeError::SizeTooBig {
-                    max: Self::MAX_SIZE,
-                    actual: size,
-                });
-            }
-
-            Ok(Self::parts_from_size(size))
-        }
-
-        // TODO: make fns to bump parts and mutate by position (to rotate the snek)
-
-        fn parts_from_size(size: u16) -> SnakeBody {
-            Self(vec![SnakePart::default(); size.into()])
-        }
-    }
-
-    /// the snake's body part
-    #[derive(Default, Debug, PartialEq, Eq, Clone)]
-    pub struct SnakePart {
-        /// direction the part is facing
-        rotation: SnakeRotation,
-    }
-
-    /// snake can only move in 90 deg increments
-    #[repr(u16)]
-    #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-    pub enum SnakeRotation {
-        #[default]
-        Deg0 = 0,
-        // TODO: how to use u16
-        // Deg0 = 0_u16,
-        Deg90 = 90,
-        Deg180 = 180,
-        Deg270 = 270,
-    }
-    impl SnakeRotation {
-        pub fn into_inner(self) -> u16 {
-            self as u16
-        }
-    }
-    impl From<Rotation> for SnakeRotation {
-        // TODO: remove if it does not make sense
-        fn from(value: Rotation) -> Self {
-            match value.into_inner() {
-                0..=89 => Self::Deg0,
-                90..=179 => Self::Deg90,
-                180..=269 => Self::Deg180,
-                270 => Self::Deg270,
-                // TODO: return err
-                _ => panic!("invalid rotation"),
-            }
-        }
-    }
-    impl From<SnakeRotation> for Rotation {
-        fn from(value: SnakeRotation) -> Self {
-            Self::new(value.into_inner())
-        }
-    }
-}
-
-mod core {
-    // TODO: set less permissive access modifiers after abstractions
-
-    use std::ops::Add;
-
-    #[derive(Default, Debug, PartialEq, Clone)]
-    pub struct Transform {
-        pub position: Vector2,
-        pub rotation: Rotation,
-    }
-    // TODO: implement vec floating point calcs
-    /// vector 2 for game coords
-    #[derive(Default, Debug, PartialEq, Clone, Copy)]
-    pub struct Vector2 {
-        pub x: f32,
-        pub y: f32,
-    }
-
-    #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct Rotation(u16);
-    impl Rotation {
-        pub const RIGHT: Rotation = Self(0);
-        pub const DOWN: Rotation = Self(90);
-        pub const LEFT: Rotation = Self(180);
-        pub const UP: Rotation = Self(270);
-        pub const DEGREES_UPPER: u16 = 360;
-        // TODO: implement (might be better to be infallible. 750° is fine to be interpreted as 30°)
-        pub fn new(value: u16) -> Self {
-            Self(value.rem_euclid(Self::DEGREES_UPPER))
-        }
-
-        pub fn rotate(self, rotation: Rotation) -> Self {
-            Self::new(self.into_inner() + rotation.into_inner())
-        }
-
-        pub fn into_inner(self) -> u16 {
-            self.0
-        }
-    }
-}
-
-mod input {
-    use crossterm::event::KeyCode;
-
-    #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-    pub enum InputKey {
-        Up,
-        Down,
-        Left,
-        Right,
-    }
-
-    impl std::fmt::Display for InputKey {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                Self::Up => write!(f, "Up"),
-                Self::Down => write!(f, "Down"),
-                Self::Left => write!(f, "Left"),
-                Self::Right => write!(f, "Right"),
-            }
-        }
-    }
-
-    impl InputKey {
-        pub fn from_keycode(key_code: KeyCode) -> Option<Self> {
-            match key_code {
-                KeyCode::Up => Some(InputKey::Up),
-                KeyCode::Down => Some(InputKey::Down),
-                KeyCode::Left => Some(InputKey::Left),
-                KeyCode::Right => Some(InputKey::Right),
-                _ => None,
-            }
-        }
+pub fn input_from_keycode(key_code: KeyCode) -> Option<InputKey> {
+    match key_code {
+        KeyCode::Up => Some(InputKey::Up),
+        KeyCode::Down => Some(InputKey::Down),
+        KeyCode::Left => Some(InputKey::Left),
+        KeyCode::Right => Some(InputKey::Right),
+        _ => None,
     }
 }
 

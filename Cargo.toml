@@ -4,4 +4,7 @@ members = ["crates/snake-core","crates/snake-game"]
 
 
 [workspace.dependencies]
+# Internal crates.
+snake-core = { path = "crates/snake-core" }
+
 crossterm = "0.29.0"
