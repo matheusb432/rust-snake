@@ -7,17 +7,50 @@ use std::{
 
 use crossterm::{
     event::{self, Event, KeyCode},
+    style::Color,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use snake_core::input::InputKey;
 use snake_core::models::snake::Snake;
 
 pub const QUIT: char = 'q';
+pub const BOARD_SIZE_X: usize = 24;
+pub const BOARD_SIZE_Y: usize = 24;
 
+// TODO: map rest
+mod assets {
+    use crossterm::style::Color;
+
+    use crate::{Texture, Tile};
+
+    // TODO: map rest
+    pub const SNAKE_HEAD: Texture = Texture {
+        tile: Tile::Char('{'),
+        color: Color::DarkGreen,
+    };
+    pub const SNAKE_PART: Texture = Texture {
+        tile: Tile::Char('~'),
+        color: Color::DarkGreen,
+    };
+}
+pub enum Tile {
+    Char(char),
+    Solid,
+}
+
+pub struct Texture {
+    pub tile: Tile,
+    pub color: Color,
+}
+
+pub struct Board {
+    inner: [[Texture; BOARD_SIZE_X]; BOARD_SIZE_Y],
+}
 fn main() -> io::Result<ExitCode> {
     let game = Game::start()?;
+    // TODO map from Board
+    let rendered_board = [[' '; BOARD_SIZE_X]; BOARD_SIZE_Y];
     // TODO: impl the newtypes and instantiate the snek
-    // TODO: use Arc<Mutex<T>> ?
     // let mut snake = Snake {hp:};
     let mut snake = Snake::spawn();
     // let mut snake_hp = 5_u32;
@@ -58,7 +91,7 @@ fn main() -> io::Result<ExitCode> {
             snake.move_to(input_key);
             let shd = snake.head_direction();
             println!("\rsnake head direction: {}", shd.into_inner());
-        }
+        };
     };
     // snake_hp = snake_hp.saturating_sub(3);
     // println!("snake_hp: {}", snake_hp);
