@@ -47,7 +47,8 @@ impl Snake {
 /// computes some new rotation by input, or none if no change to it is necessary.
 fn compute_new_rotation(input: InputKey, rotation: Rotation) -> Option<Rotation> {
     match (input, rotation) {
-        // TODO: study the mathematical approach here, this is reasonably only bc of the 4-axis rotation constraint.
+        // TODO: study the mathematical approach here, this is reasonably only bc of the 4-axis
+        // rotation constraint.
         (InputKey::Up, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::UP),
         (InputKey::Right, Rotation::UP | Rotation::DOWN) => Some(Rotation::RIGHT),
         (InputKey::Down, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::DOWN),

@@ -7,49 +7,20 @@ use std::{
 
 use crossterm::{
     event::{self, Event, KeyCode},
-    style::Color,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use snake_core::input::InputKey;
-use snake_core::models::snake::Snake;
+use snake_core::{input::InputKey, models::snake::Snake};
+
+use crate::render::{BOARD_SIZE_X, BOARD_SIZE_Y, Board};
+
+mod assets;
+mod render;
 
 pub const QUIT: char = 'q';
-pub const BOARD_SIZE_X: usize = 24;
-pub const BOARD_SIZE_Y: usize = 24;
 
-// TODO: map rest
-mod assets {
-    use crossterm::style::Color;
-
-    use crate::{Texture, Tile};
-
-    // TODO: map rest
-    pub const SNAKE_HEAD: Texture = Texture {
-        tile: Tile::Char('{'),
-        color: Color::DarkGreen,
-    };
-    pub const SNAKE_PART: Texture = Texture {
-        tile: Tile::Char('~'),
-        color: Color::DarkGreen,
-    };
-}
-pub enum Tile {
-    Char(char),
-    Solid,
-}
-
-pub struct Texture {
-    pub tile: Tile,
-    pub color: Color,
-}
-
-pub struct Board {
-    inner: [[Texture; BOARD_SIZE_X]; BOARD_SIZE_Y],
-}
 fn main() -> io::Result<ExitCode> {
     let game = Game::start()?;
-    // TODO map from Board
-    let rendered_board = [[' '; BOARD_SIZE_X]; BOARD_SIZE_Y];
+    let board = Board::new();
     // TODO: impl the newtypes and instantiate the snek
     // let mut snake = Snake {hp:};
     let mut snake = Snake::spawn();
@@ -69,7 +40,8 @@ fn main() -> io::Result<ExitCode> {
     });
 
     let exit_code = loop {
-        let input_key: Option<InputKey> = match input_rx.try_recv() {
+        // TODO: change to try_recv() after debugging board
+        let input_key: Option<InputKey> = match input_rx.recv() {
             Ok(key) => {
                 if let Some(input_keycode) = input_from_keycode(key.code) {
                     Some(input_keycode)
@@ -80,7 +52,7 @@ fn main() -> io::Result<ExitCode> {
                     }
                 }
             }
-            Err(mpsc::TryRecvError::Empty) => None,
+            // Err(mpsc::TryRecvError::Empty) => None,
             Err(err) => {
                 eprintln!("\r{}", err);
                 break ExitCode::FAILURE;
@@ -92,6 +64,18 @@ fn main() -> io::Result<ExitCode> {
             let shd = snake.head_direction();
             println!("\rsnake head direction: {}", shd.into_inner());
         };
+        let buffer = String::with_capacity(board.size());
+
+        // TODO: clean an impl actual basic renderer (w/ crossterm)
+        for b_x in 0..BOARD_SIZE_X {
+            for b_y in 0..BOARD_SIZE_Y {
+                // let _ = write!(&mut buffer, "{}", board.get_texture(b_x, b_y));
+                print!("{}", board.get_texture(b_x, b_y))
+            }
+            println!("\r");
+        }
+        println!("\r\n{}", buffer);
+        // let _ = write!(&mut buffer,)
     };
     // snake_hp = snake_hp.saturating_sub(3);
     // println!("snake_hp: {}", snake_hp);
