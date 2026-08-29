@@ -13,9 +13,15 @@ use crossterm::{
 };
 use snake_core::{input::InputKey, models::snake::Snake};
 
-use crate::render::{Board, TerminalProjection, render_board};
+use crate::{
+    game::Game,
+    input::InputKey,
+    render::{Board, TerminalProjection, render_board},
+};
 
 mod assets;
+mod game;
+mod input;
 mod render;
 
 pub const QUIT: char = 'q';
@@ -42,7 +48,7 @@ fn main() -> io::Result<ExitCode> {
         // TODO: change to try_recv() after debugging board
         let input_key: Option<InputKey> = match input_rx.try_recv() {
             Ok(key) => {
-                if let Some(input_keycode) = input_from_keycode(key.code) {
+                if let Some(input_keycode) = InputKey::from_keycode(key.code) {
                     Some(input_keycode)
                 } else {
                     match key.code {
@@ -72,53 +78,4 @@ fn main() -> io::Result<ExitCode> {
     };
 
     Ok(exit_code)
-}
-
-pub fn input_from_keycode(key_code: KeyCode) -> Option<InputKey> {
-    match key_code {
-        KeyCode::Up => Some(InputKey::Up),
-        KeyCode::Down => Some(InputKey::Down),
-        KeyCode::Left => Some(InputKey::Left),
-        KeyCode::Right => Some(InputKey::Right),
-        _ => None,
-    }
-}
-
-struct Game;
-impl Game {
-    pub fn start() -> io::Result<Self> {
-        enable_raw_mode()?;
-        execute!(io::stdout(), Hide, Clear(ClearType::All), MoveTo(0, 0))?;
-        Ok(Self)
-    }
-
-    /// drops `Game`, which in turn calls its `Drop` impl to exit the process
-    pub fn exit(self) -> ExitCode {
-        self.report()
-    }
-}
-impl Drop for Game {
-    fn drop(&mut self) {
-        let _ = execute!(io::stdout(), Show);
-        let _ = disable_raw_mode();
-        println!("\r\nexiting game...");
-    }
-}
-impl Termination for Game {
-    fn report(self) -> ExitCode {
-        ExitCode::SUCCESS
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::num::NonZeroI64;
-
-    #[test]
-    fn some_test() {
-        let nzu: NonZeroI64 = 5.try_into().unwrap();
-        let my_i: i64 = nzu.into();
-
-        assert_eq!(5, my_i);
-    }
 }

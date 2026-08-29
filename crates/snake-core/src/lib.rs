@@ -1,4 +1,4 @@
-pub mod input;
+pub mod game_object;
 pub mod models;
 
 #[derive(Default, Debug, PartialEq, Clone)]
