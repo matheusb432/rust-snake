@@ -1,5 +1,4 @@
 use std::{
-    fmt::Write as _,
     io::{self},
     process::{ExitCode, Termination},
     sync::mpsc,
@@ -15,7 +14,7 @@ use crossterm::{
 };
 use snake_core::{input::InputKey, models::snake::Snake};
 
-use crate::render::{BOARD_SIZE_X, BOARD_SIZE_Y, Board};
+use crate::render::Board;
 
 mod assets;
 mod render;
@@ -64,19 +63,9 @@ fn main() -> io::Result<ExitCode> {
             println!("\r\nsnake head direction: {}", shd.into_inner());
         };
 
-        let mut buffer = String::with_capacity(board.size() + BOARD_SIZE_Y * 2);
-
-        for b_y in 0..BOARD_SIZE_Y {
-            for b_x in 0..BOARD_SIZE_X {
-                let _ = write!(&mut buffer, "{}", board.get_texture(b_x, b_y));
-            }
-
-            if b_y + 1 < BOARD_SIZE_Y {
-                buffer.push_str("\r\n");
-            }
-        }
-
-        execute!(io::stdout(), MoveTo(0, 0), Print(buffer))?;
+        // TODO: mutate board textures b4 rendering
+        let board_frame = board.render();
+        execute!(io::stdout(), MoveTo(0, 0), Print(&board_frame))?;
     };
 
     Ok(exit_code)

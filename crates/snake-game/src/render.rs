@@ -1,4 +1,4 @@
-use std::{array, fmt::Display};
+use std::array;
 
 use crossterm::style::Color;
 use snake_core::Vector2;
@@ -11,14 +11,12 @@ pub(crate) const BOARD_SIZE_Y: usize = 24;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Texture {
     Char { character: char, color: Color },
-    Solid { color: Color },
 }
 
-impl Display for Texture {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Texture {
+    fn render_character(&self) -> char {
         match self {
-            Self::Char { character, .. } => write!(f, "{character}"),
-            Self::Solid { .. } => write!(f, "s"),
+            Self::Char { character, .. } => *character,
         }
     }
 }
@@ -47,15 +45,37 @@ pub(crate) struct Board {
     inner: [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X],
 }
 impl Board {
+    pub(crate) const CELL_WIDTH_COLUMNS: usize = 2;
+
     pub fn new() -> Self {
         Self {
             inner: create_default_board(),
         }
     }
 
-    pub fn size(&self) -> usize {
-        // TODO: study if as_flattened is more expensive than a ptr alloc
-        self.inner.as_flattened().len()
+    pub fn render(&self) -> String {
+        let mut rendered = String::new();
+
+        for board_y in 0..BOARD_SIZE_Y {
+            for board_x in 0..BOARD_SIZE_X {
+                let character = self.inner[board_x][board_y].render_character();
+                let board_x_is_edge = board_x == 0 || board_x == BOARD_SIZE_X - 1;
+
+                rendered.push(character);
+
+                if !board_x_is_edge {
+                    for _ in 1..Self::CELL_WIDTH_COLUMNS {
+                        rendered.push(character);
+                    }
+                }
+            }
+
+            if board_y + 1 < BOARD_SIZE_Y {
+                rendered.push_str("\r\n");
+            }
+        }
+
+        rendered
     }
 
     pub fn classify_position(position: Vector2) -> BoardPosition {
@@ -65,11 +85,6 @@ impl Board {
         let y_is_edge = position.y == 0.0 || position.y == y_max;
 
         BoardPosition::new(x_is_edge, y_is_edge)
-    }
-
-    // TODO create strong types, and impl Iterator for board, maybe?
-    pub fn get_texture(&self, x: usize, y: usize) -> Texture {
-        self.inner[x][y]
     }
 }
 
@@ -93,7 +108,7 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 
 #[cfg(test)]
 mod tests {
-    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, create_default_board};
+    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, Board, create_default_board};
     use crate::assets;
 
     #[test]
@@ -135,5 +150,19 @@ mod tests {
                 .iter()
                 .all(|texture| *texture == assets::BLANK)
         }));
+    }
+
+    #[test]
+    fn render_expands_interior_board_cells_to_terminal_columns() {
+        let rendered = Board::new().render();
+        let rows = rendered.split("\r\n").collect::<Vec<_>>();
+        let inside_width_columns = (BOARD_SIZE_X - 2) * Board::CELL_WIDTH_COLUMNS;
+        let horizontal_wall = format!("x{}x", "_".repeat(inside_width_columns));
+        let inside = format!("|{}|", " ".repeat(inside_width_columns));
+
+        assert_eq!(rows.len(), BOARD_SIZE_Y);
+        assert_eq!(rows[0], horizontal_wall);
+        assert!(rows[1..BOARD_SIZE_Y - 1].iter().all(|row| *row == inside));
+        assert_eq!(rows[BOARD_SIZE_Y - 1], horizontal_wall);
     }
 }
