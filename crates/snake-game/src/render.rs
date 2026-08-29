@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{array, fmt::Display};
 
 use crossterm::style::Color;
 use snake_core::Vector2;
@@ -74,8 +74,8 @@ impl Board {
 }
 
 fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
-    std::array::from_fn(|x| {
-        std::array::from_fn(|y| {
+    array::from_fn(|x| {
+        array::from_fn(|y| {
             let position = Vector2 {
                 x: x as f32,
                 y: y as f32,

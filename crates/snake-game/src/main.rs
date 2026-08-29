@@ -7,7 +7,7 @@ use std::{
 };
 
 use crossterm::{
-    cursor::MoveTo,
+    cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode},
     execute,
     style::Print,
@@ -25,12 +25,8 @@ pub const QUIT: char = 'q';
 fn main() -> io::Result<ExitCode> {
     let game = Game::start()?;
     let board = Board::new();
-    // TODO: impl the newtypes and instantiate the snek
-    // let mut snake = Snake {hp:};
     let mut snake = Snake::spawn();
-    // let mut snake_hp = 5_u32;
 
-    // TODO: use newtype for directional inputs
     let (input_tx, input_rx) = std::sync::mpsc::channel();
 
     println!("\renter move ['{QUIT}' to quit]: ");
@@ -45,7 +41,7 @@ fn main() -> io::Result<ExitCode> {
 
     let exit_code = loop {
         // TODO: change to try_recv() after debugging board
-        let input_key: Option<InputKey> = match input_rx.recv() {
+        let input_key: Option<InputKey> = match input_rx.try_recv() {
             Ok(key) => {
                 if let Some(input_keycode) = input_from_keycode(key.code) {
                     Some(input_keycode)
@@ -56,17 +52,16 @@ fn main() -> io::Result<ExitCode> {
                     }
                 }
             }
-            // Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Empty) => None,
             Err(err) => {
                 eprintln!("\r{}", err);
                 break ExitCode::FAILURE;
             }
         };
         if let Some(input_key) = input_key {
-            println!("\rmove: {}", input_key);
             snake.move_to(input_key);
             let shd = snake.head_direction();
-            println!("\rsnake head direction: {}", shd.into_inner());
+            println!("\r\nsnake head direction: {}", shd.into_inner());
         };
 
         let mut buffer = String::with_capacity(board.size() + BOARD_SIZE_Y * 2);
@@ -101,7 +96,7 @@ struct Game;
 impl Game {
     pub fn start() -> io::Result<Self> {
         enable_raw_mode()?;
-        execute!(io::stdout(), Clear(ClearType::All), MoveTo(0, 0))?;
+        execute!(io::stdout(), Hide, Clear(ClearType::All), MoveTo(0, 0))?;
         Ok(Self)
     }
 
@@ -112,8 +107,9 @@ impl Game {
 }
 impl Drop for Game {
     fn drop(&mut self) {
+        let _ = execute!(io::stdout(), Show);
         let _ = disable_raw_mode();
-        println!("\rexiting game...");
+        println!("\r\nexiting game...");
     }
 }
 impl Termination for Game {

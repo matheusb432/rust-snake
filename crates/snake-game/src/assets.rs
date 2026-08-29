@@ -26,6 +26,9 @@ pub(super) const BLANK: Texture = Texture::Char {
     character: ' ',
     color: Color::White,
 };
+pub(super) const WHITE: Texture = Texture::Solid {
+    color: Color::White,
+};
 pub(super) const APPLE: Texture = Texture::Char {
     character: '&',
     color: Color::Red,
