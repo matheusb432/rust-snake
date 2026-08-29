@@ -11,7 +11,6 @@ pub struct Snake {
 }
 
 impl Snake {
-    // TODO: impl
     pub fn spawn() -> Self {
         let hp = SnakeHp::default();
         Self {

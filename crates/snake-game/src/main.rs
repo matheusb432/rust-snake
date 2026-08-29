@@ -1,4 +1,5 @@
 use std::{
+    fmt::Write as _,
     io::{self},
     process::{ExitCode, Termination},
     sync::mpsc,
@@ -6,8 +7,11 @@ use std::{
 };
 
 use crossterm::{
+    cursor::MoveTo,
     event::{self, Event, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
+    execute,
+    style::Print,
+    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
 use snake_core::{input::InputKey, models::snake::Snake};
 
@@ -64,24 +68,21 @@ fn main() -> io::Result<ExitCode> {
             let shd = snake.head_direction();
             println!("\rsnake head direction: {}", shd.into_inner());
         };
-        let buffer = String::with_capacity(board.size());
 
-        // TODO: clean an impl actual basic renderer (w/ crossterm)
-        for b_x in 0..BOARD_SIZE_X {
-            for b_y in 0..BOARD_SIZE_Y {
-                // let _ = write!(&mut buffer, "{}", board.get_texture(b_x, b_y));
-                print!("{}", board.get_texture(b_x, b_y))
+        let mut buffer = String::with_capacity(board.size() + BOARD_SIZE_Y * 2);
+
+        for b_y in 0..BOARD_SIZE_Y {
+            for b_x in 0..BOARD_SIZE_X {
+                let _ = write!(&mut buffer, "{}", board.get_texture(b_x, b_y));
             }
-            println!("\r");
+
+            if b_y + 1 < BOARD_SIZE_Y {
+                buffer.push_str("\r\n");
+            }
         }
-        println!("\r\n{}", buffer);
-        // let _ = write!(&mut buffer,)
+
+        execute!(io::stdout(), MoveTo(0, 0), Print(buffer))?;
     };
-    // snake_hp = snake_hp.saturating_sub(3);
-    // println!("snake_hp: {}", snake_hp);
-    // if snake_hp == 0 {
-    //     break Ok(());
-    // }
 
     Ok(exit_code)
 }
@@ -100,6 +101,7 @@ struct Game;
 impl Game {
     pub fn start() -> io::Result<Self> {
         enable_raw_mode()?;
+        execute!(io::stdout(), Clear(ClearType::All), MoveTo(0, 0))?;
         Ok(Self)
     }
 
