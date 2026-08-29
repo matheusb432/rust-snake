@@ -1,5 +1,5 @@
 use std::{
-    io::{self},
+    io,
     process::{ExitCode, Termination},
     sync::mpsc,
     thread,
@@ -9,12 +9,11 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode},
     execute,
-    style::Print,
     terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
 use snake_core::{input::InputKey, models::snake::Snake};
 
-use crate::render::Board;
+use crate::render::{Board, TerminalProjection, render_board};
 
 mod assets;
 mod render;
@@ -25,6 +24,7 @@ fn main() -> io::Result<ExitCode> {
     let game = Game::start()?;
     let board = Board::new();
     let mut snake = Snake::spawn();
+    let mut output = io::stdout();
 
     let (input_tx, input_rx) = std::sync::mpsc::channel();
 
@@ -64,8 +64,11 @@ fn main() -> io::Result<ExitCode> {
         };
 
         // TODO: mutate board textures b4 rendering
-        let board_frame = board.render();
-        execute!(io::stdout(), MoveTo(0, 0), Print(&board_frame))?;
+        render_board(
+            &mut output,
+            &board,
+            TerminalProjection::DOUBLE_WIDTH_INTERIOR,
+        )?;
     };
 
     Ok(exit_code)
