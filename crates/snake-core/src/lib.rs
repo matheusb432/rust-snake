@@ -1,11 +1,30 @@
 pub mod game_object;
 pub mod models;
+pub mod movement;
+pub mod render;
 
-#[derive(Default, Debug, PartialEq, Clone)]
+pub use game_object::{GameObject, GameObjectId};
+pub use movement::{Move, MoveDirection};
+pub use render::{Render, Texture, TextureColor};
+
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Transform {
-    pub position: Vector2,
+    pub position: Vector2Int,
     pub rotation: Rotation,
 }
+
+#[derive(Default, Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct Vector2Int {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Vector2Int {
+    pub const fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+}
+
 // TODO: implement vec floating point calcs
 /// vector 2 for game coords
 #[derive(Default, Debug, PartialEq, Clone, Copy)]

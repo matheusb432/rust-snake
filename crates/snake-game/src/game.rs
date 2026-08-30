@@ -1,49 +1,132 @@
-use std::{
-    collections::HashMap,
-    io,
-    process::{ExitCode, Termination},
-};
+use std::{collections::HashMap, error::Error, fmt, rc::Rc};
 
-use crossterm::{cursor, terminal};
-use snake_core::game_object::{GameObject, GameObjectId};
+use snake_core::{GameObject, GameObjectId};
 
-use crate::render::Board;
+use crate::board::Board;
+
+pub(crate) type GameObjectIterator<'a> = Box<dyn Iterator<Item = &'a dyn GameObject> + 'a>;
 
 pub(crate) struct Game {
-    objects: HashMap<GameObjectId, dyn GameObject>,
-    // TODO enable moving/painting to it via Game
-    board: GameBoard,
+    objects: HashMap<GameObjectId, Rc<dyn GameObject>>,
+    board: Board,
 }
+
 impl Game {
-    pub fn start() -> io::Result<Self> {
-        terminal::enable_raw_mode()?;
-        crossterm::execute!(
-            io::stdout(),
-            cursor::Hide,
-            terminal::Clear(terminal::ClearType::All),
-            cursor::MoveTo(0, 0)
-        )?;
-
-        Ok(Self {
-            objects: HashMap::default(),
+    pub fn new() -> Self {
+        Self {
+            objects: HashMap::new(),
             board: Board::new(),
-        })
+        }
     }
 
-    /// drops `Game`, which in turn calls its `Drop` impl to exit the process
-    pub fn exit(self) -> ExitCode {
-        self.report()
+    pub fn place_object(&mut self, object: Rc<dyn GameObject>) -> Result<(), PlaceObjectError> {
+        let id = object.id();
+        if self.objects.contains_key(&id) {
+            return Err(PlaceObjectError::ObjectAlreadyPlaced { id });
+        }
+
+        self.objects.insert(id, object);
+        Ok(())
+    }
+
+    pub fn board(&self) -> &Board {
+        &self.board
+    }
+
+    pub fn objects(&self) -> GameObjectIterator<'_> {
+        Box::new(self.objects.values().map(|object| object.as_ref()))
     }
 }
-impl Drop for Game {
-    fn drop(&mut self) {
-        let _ = crossterm::execute!(io::stdout(), cursor::Show);
-        let _ = terminal::disable_raw_mode();
-        println!("\r\nexiting game...");
+
+impl Default for Game {
+    fn default() -> Self {
+        Self::new()
     }
 }
-impl Termination for Game {
-    fn report(self) -> ExitCode {
-        ExitCode::SUCCESS
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PlaceObjectError {
+    ObjectAlreadyPlaced { id: GameObjectId },
+}
+
+impl fmt::Display for PlaceObjectError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ObjectAlreadyPlaced { id } => {
+                write!(formatter, "object {id} is already placed")
+            }
+        }
+    }
+}
+
+impl Error for PlaceObjectError {}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use snake_core::{
+        GameObject, GameObjectId, Render, Rotation, Texture, TextureColor, Vector2Int,
+    };
+
+    use super::Game;
+
+    struct Foo {
+        id: GameObjectId,
+        position: Vector2Int,
+    }
+
+    impl Foo {
+        fn at(position: Vector2Int) -> Self {
+            Self {
+                id: GameObjectId::new(),
+                position,
+            }
+        }
+    }
+
+    impl Render for Foo {
+        fn texture(&self) -> Texture {
+            Texture::new('f', TextureColor::White)
+        }
+    }
+
+    impl GameObject for Foo {
+        fn position(&self) -> Vector2Int {
+            self.position
+        }
+
+        fn id(&self) -> GameObjectId {
+            self.id
+        }
+
+        fn rotation(&self) -> Rotation {
+            Rotation::default()
+        }
+    }
+
+    #[test]
+    fn places_an_object() {
+        let mut game = Game::new();
+        let foo = Foo::at(Vector2Int::new(4, 7));
+        let id = foo.id();
+
+        assert_eq!(game.place_object(Rc::new(foo)), Ok(()));
+        assert!(game.objects().any(|object| object.id() == id));
+    }
+
+    #[test]
+    fn places_objects_at_the_same_position() {
+        let mut game = Game::new();
+        let position = Vector2Int::new(24, 7);
+
+        assert_eq!(game.place_object(Rc::new(Foo::at(position))), Ok(()));
+        assert_eq!(game.place_object(Rc::new(Foo::at(position))), Ok(()));
+        assert_eq!(
+            game.objects()
+                .filter(|object| object.position() == position)
+                .count(),
+            2
+        );
     }
 }

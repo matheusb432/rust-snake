@@ -1,10 +1,12 @@
-use std::io::ErrorKind::StaleNetworkFileHandle;
-
-use crate::{Rotation, Transform, input::InputKey};
+use crate::{
+    GameObject, GameObjectId, Move, MoveDirection, Render, Rotation, Texture, TextureColor,
+    Transform, Vector2Int,
+};
 
 /// snake player
 #[derive(Debug)]
 pub struct Snake {
+    id: GameObjectId,
     hp: SnakeHp,
     body: SnakeBody,
     transform: Transform,
@@ -14,6 +16,7 @@ impl Snake {
     pub fn spawn() -> Self {
         let hp = SnakeHp::default();
         Self {
+            id: GameObjectId::new(),
             hp,
             body: SnakeBody::from_hp(hp),
             transform: Transform::default(),
@@ -29,12 +32,6 @@ impl Snake {
         todo!()
     }
 
-    pub fn move_to(&mut self, input: InputKey) {
-        if let Some(rotation) = compute_new_rotation(input, self.transform.rotation) {
-            self.transform.rotation = rotation;
-        }
-    }
-
     /// direction the snake's head is facing at, dictated by it's rotation
     pub fn head_direction(&self) -> SnakeRotation {
         self.transform.rotation.into()
@@ -43,15 +40,43 @@ impl Snake {
     fn compute_parts_size(&self) {}
 }
 
+impl Render for Snake {
+    fn texture(&self) -> Texture {
+        Texture::new('{', TextureColor::DarkGreen)
+    }
+}
+
+impl GameObject for Snake {
+    fn position(&self) -> Vector2Int {
+        self.transform.position
+    }
+
+    fn rotation(&self) -> Rotation {
+        self.transform.rotation
+    }
+
+    fn id(&self) -> GameObjectId {
+        self.id
+    }
+}
+
+impl Move for Snake {
+    fn move_to(&mut self, direction: MoveDirection) {
+        if let Some(rotation) = compute_new_rotation(direction, self.transform.rotation) {
+            self.transform.rotation = rotation;
+        }
+    }
+}
+
 /// computes some new rotation by input, or none if no change to it is necessary.
-fn compute_new_rotation(input: InputKey, rotation: Rotation) -> Option<Rotation> {
-    match (input, rotation) {
+fn compute_new_rotation(direction: MoveDirection, rotation: Rotation) -> Option<Rotation> {
+    match (direction, rotation) {
         // TODO: study the mathematical approach here, this is reasonably only bc of the 4-axis
         // rotation constraint.
-        (InputKey::Up, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::UP),
-        (InputKey::Right, Rotation::UP | Rotation::DOWN) => Some(Rotation::RIGHT),
-        (InputKey::Down, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::DOWN),
-        (InputKey::Left, Rotation::UP | Rotation::DOWN) => Some(Rotation::LEFT),
+        (MoveDirection::Up, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::UP),
+        (MoveDirection::Right, Rotation::UP | Rotation::DOWN) => Some(Rotation::RIGHT),
+        (MoveDirection::Down, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::DOWN),
+        (MoveDirection::Left, Rotation::UP | Rotation::DOWN) => Some(Rotation::LEFT),
         _ => None,
     }
 }
@@ -149,15 +174,15 @@ impl From<SnakeRotation> for Rotation {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Rotation, input::InputKey, models::snake::compute_new_rotation};
+    use crate::{MoveDirection, Rotation, models::snake::compute_new_rotation};
 
     #[test]
     fn compute_new_rotation_computes_some() {
         let cases = [
-            (Rotation::LEFT, InputKey::Up, Rotation::UP),
-            (Rotation::RIGHT, InputKey::Up, Rotation::UP),
-            (Rotation::UP, InputKey::Left, Rotation::LEFT),
-            (Rotation::DOWN, InputKey::Right, Rotation::RIGHT),
+            (Rotation::LEFT, MoveDirection::Up, Rotation::UP),
+            (Rotation::RIGHT, MoveDirection::Up, Rotation::UP),
+            (Rotation::UP, MoveDirection::Left, Rotation::LEFT),
+            (Rotation::DOWN, MoveDirection::Right, Rotation::RIGHT),
         ];
 
         for (rotation, input_key, expected_rotation) in cases {
@@ -171,10 +196,10 @@ mod tests {
     #[test]
     fn compute_new_rotation_returns_none_when_no_rotation_necessary() {
         let cases = [
-            (Rotation::UP, InputKey::Up),
-            (Rotation::DOWN, InputKey::Up),
-            (Rotation::LEFT, InputKey::Left),
-            (Rotation::RIGHT, InputKey::Right),
+            (Rotation::UP, MoveDirection::Up),
+            (Rotation::DOWN, MoveDirection::Up),
+            (Rotation::LEFT, MoveDirection::Left),
+            (Rotation::RIGHT, MoveDirection::Right),
         ];
 
         for (rotation, input_key) in cases {
