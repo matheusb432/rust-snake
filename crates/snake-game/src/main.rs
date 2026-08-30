@@ -1,32 +1,21 @@
 use std::{cell::RefCell, io, process::ExitCode, rc::Rc, sync::mpsc, thread};
 
 use crossterm::event::{self, Event};
-use snake_core::{GameObject, Move, models::snake::Snake};
-
-use crate::{
-    game::Game, infra::crossterm_renderer::CrosstermRenderer, input::InputKey, render::Renderer,
-    terminal::TerminalSession,
+use snake_core::{
+    GameObject, Move,
+    models::{apple::Apple, snake::Snake},
 };
 
-mod assets;
+use crate::{
+    game::Game,
+    infra::{crossterm_renderer::CrosstermRenderer, input::InputKey, terminal::TerminalSession},
+    render::Renderer,
+};
+
 mod board;
 mod game;
 mod infra;
-mod input;
 mod render;
-mod terminal;
-
-// TODO: move to core
-// struct Apple{}
-// impl GameObject for Apple{
-//     fn rotation(&self) -> snake_core::Rotation {
-//         todo!()
-//     }
-
-//     fn id(&self) -> snake_core::GameObjectId {
-//         todo!()
-//     }
-// }
 
 fn main() -> io::Result<ExitCode> {
     let _terminal = TerminalSession::start()?;
@@ -35,8 +24,11 @@ fn main() -> io::Result<ExitCode> {
     let snake = Rc::new(RefCell::new(Snake::spawn()));
     let snake_game_object: Rc<dyn GameObject> = snake.clone();
     // TODO: make snake have renderer textures
-    game.place_object(snake_game_object)
-        .map_err(io::Error::other)?;
+    // game.place_object(snake_game_object)
+    //     .map_err(io::Error::other)?;
+    let apple = Rc::new(RefCell::new(Apple::new()));
+    game.place_object(apple.clone()).map_err(io::Error::other)?;
+
     let mut renderer = CrosstermRenderer::default();
 
     let (input_tx, input_rx) = mpsc::channel();
@@ -60,9 +52,12 @@ fn main() -> io::Result<ExitCode> {
             }
         };
 
+        let game_board = game.board();
+        let game_board_bounds = game_board.get_upper_bounds();
         match input_key {
             Some(InputKey::Move(direction)) => {
-                snake.borrow_mut().move_to(direction);
+                snake.borrow_mut().rotate_to(direction);
+                apple.borrow_mut().be_eaten(game_board_bounds);
             }
             Some(InputKey::Quit) => break ExitCode::SUCCESS,
             None => {}

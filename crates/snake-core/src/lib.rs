@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod game_object;
 pub mod models;
 pub mod movement;

@@ -1,6 +1,6 @@
 use crate::{
-    GameObject, GameObjectId, Move, MoveDirection, Render, Rotation, Texture, TextureColor,
-    Transform, Vector2Int,
+    GameObject, GameObjectId, Move, MoveDirection, Render, Rotation, Texture, Transform,
+    Vector2Int, assets, movement::compute_new_rotation,
 };
 
 /// snake player
@@ -42,7 +42,7 @@ impl Snake {
 
 impl Render for Snake {
     fn texture(&self) -> Texture {
-        Texture::new('{', TextureColor::DarkGreen)
+        assets::SNAKE_HEAD
     }
 }
 
@@ -61,25 +61,13 @@ impl GameObject for Snake {
 }
 
 impl Move for Snake {
-    fn move_to(&mut self, direction: MoveDirection) {
+    fn rotate_to(&mut self, direction: MoveDirection) {
         if let Some(rotation) = compute_new_rotation(direction, self.transform.rotation) {
             self.transform.rotation = rotation;
         }
     }
 }
 
-/// computes some new rotation by input, or none if no change to it is necessary.
-fn compute_new_rotation(direction: MoveDirection, rotation: Rotation) -> Option<Rotation> {
-    match (direction, rotation) {
-        // TODO: study the mathematical approach here, this is reasonably only bc of the 4-axis
-        // rotation constraint.
-        (MoveDirection::Up, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::UP),
-        (MoveDirection::Right, Rotation::UP | Rotation::DOWN) => Some(Rotation::RIGHT),
-        (MoveDirection::Down, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::DOWN),
-        (MoveDirection::Left, Rotation::UP | Rotation::DOWN) => Some(Rotation::LEFT),
-        _ => None,
-    }
-}
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SnakeError {
     SizeTooBig { max: u16, actual: u16 },
@@ -169,41 +157,5 @@ impl From<Rotation> for SnakeRotation {
 impl From<SnakeRotation> for Rotation {
     fn from(value: SnakeRotation) -> Self {
         Self::new(value.into_inner())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{MoveDirection, Rotation, models::snake::compute_new_rotation};
-
-    #[test]
-    fn compute_new_rotation_computes_some() {
-        let cases = [
-            (Rotation::LEFT, MoveDirection::Up, Rotation::UP),
-            (Rotation::RIGHT, MoveDirection::Up, Rotation::UP),
-            (Rotation::UP, MoveDirection::Left, Rotation::LEFT),
-            (Rotation::DOWN, MoveDirection::Right, Rotation::RIGHT),
-        ];
-
-        for (rotation, input_key, expected_rotation) in cases {
-            assert_eq!(
-                Some(expected_rotation),
-                compute_new_rotation(input_key, rotation)
-            );
-        }
-    }
-
-    #[test]
-    fn compute_new_rotation_returns_none_when_no_rotation_necessary() {
-        let cases = [
-            (Rotation::UP, MoveDirection::Up),
-            (Rotation::DOWN, MoveDirection::Up),
-            (Rotation::LEFT, MoveDirection::Left),
-            (Rotation::RIGHT, MoveDirection::Right),
-        ];
-
-        for (rotation, input_key) in cases {
-            assert_eq!(None, compute_new_rotation(input_key, rotation));
-        }
     }
 }

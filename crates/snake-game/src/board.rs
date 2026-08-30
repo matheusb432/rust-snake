@@ -1,8 +1,6 @@
 use std::array;
 
-use snake_core::{Texture, Vector2Int};
-
-use crate::assets;
+use snake_core::{Texture, Vector2Int, assets};
 
 pub(crate) const BOARD_SIZE_X: usize = 24;
 pub(crate) const BOARD_SIZE_Y: usize = 24;
@@ -42,7 +40,15 @@ impl Board {
         self.inner[board_x][board_y]
     }
 
-    fn classify_position(position: Vector2Int) -> BoardPosition {
+    /// gets bounds of possible positions
+    pub const fn get_upper_bounds(&self) -> Vector2Int {
+        Vector2Int {
+            x: BOARD_SIZE_X as i32,
+            y: BOARD_SIZE_Y as i32,
+        }
+    }
+
+    pub fn classify_position(position: Vector2Int) -> BoardPosition {
         let x_max = (BOARD_SIZE_X - 1) as i32;
         let y_max = (BOARD_SIZE_Y - 1) as i32;
         let x_is_edge = position.x == 0 || position.x == x_max;
@@ -75,8 +81,9 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 
 #[cfg(test)]
 mod tests {
+    use snake_core::assets;
+
     use super::{BOARD_SIZE_X, BOARD_SIZE_Y, create_default_board};
-    use crate::assets;
 
     #[test]
     fn create_default_board_surrounds_blank_inside_with_walls() {
