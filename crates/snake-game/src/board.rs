@@ -1,6 +1,6 @@
 use std::array;
 
-use snake_core::{Texture, Vector2Int, assets};
+use snake_core::{Bounds, Texture, Vector2Int, assets};
 
 pub(crate) const BOARD_SIZE_X: usize = 24;
 pub(crate) const BOARD_SIZE_Y: usize = 24;
@@ -40,11 +40,10 @@ impl Board {
         self.inner[board_x][board_y]
     }
 
-    /// gets bounds of possible positions
-    pub const fn get_upper_bounds(&self) -> Vector2Int {
-        Vector2Int {
-            x: BOARD_SIZE_X as i32,
-            y: BOARD_SIZE_Y as i32,
+    pub const fn bounds(&self) -> Bounds {
+        Bounds {
+            start: Vector2Int::new(1, 1),
+            end: Vector2Int::new((BOARD_SIZE_X - 2) as i32, (BOARD_SIZE_Y - 2) as i32),
         }
     }
 
@@ -81,9 +80,17 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::assets;
+    use snake_core::{Vector2Int, assets};
 
-    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, create_default_board};
+    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, Board, create_default_board};
+
+    #[test]
+    fn playable_bounds_exclude_the_board_walls() {
+        let bounds = Board::new().bounds();
+
+        assert_eq!(bounds.start, Vector2Int::new(1, 1));
+        assert_eq!(bounds.end, Vector2Int::new(22, 22));
+    }
 
     #[test]
     fn create_default_board_surrounds_blank_inside_with_walls() {

@@ -26,6 +26,12 @@ impl Vector2Int {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Bounds {
+    pub start: Vector2Int,
+    pub end: Vector2Int,
+}
+
 // TODO: implement vec floating point calcs
 /// vector 2 for game coords
 #[derive(Default, Debug, PartialEq, Clone, Copy)]

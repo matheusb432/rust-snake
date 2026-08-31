@@ -1,4 +1,4 @@
-use std::{cell::RefCell, io, process::ExitCode, rc::Rc, sync::mpsc, thread};
+use std::{cell::RefCell, io, process::ExitCode, rc::Rc};
 
 use crossterm::event::{self, Event};
 use snake_core::{
@@ -26,44 +26,28 @@ fn main() -> io::Result<ExitCode> {
     // TODO: make snake have renderer textures
     // game.place_object(snake_game_object)
     //     .map_err(io::Error::other)?;
-    let apple = Rc::new(RefCell::new(Apple::new()));
+    let game_board_bounds = game.board().bounds();
+    let apple = Rc::new(RefCell::new(Apple::spawn(game_board_bounds)));
     game.place_object(apple.clone()).map_err(io::Error::other)?;
 
     let mut renderer = CrosstermRenderer::default();
-
-    let (input_tx, input_rx) = mpsc::channel();
-
     println!("\renter move ['{}' to quit]: ", InputKey::QUIT_CHARACTER);
-    thread::spawn(move || {
-        loop {
-            if let Ok(Event::Key(key)) = event::read() {
-                let _ = input_tx.send(key);
-            }
-        }
-    });
+    renderer.render(game.board(), game.objects())?;
 
     let exit_code = loop {
-        let input_key = match input_rx.try_recv() {
-            Ok(key) => InputKey::from_keycode(key.code),
-            Err(mpsc::TryRecvError::Empty) => None,
-            Err(error) => {
-                eprintln!("\r{error}");
-                break ExitCode::FAILURE;
-            }
+        let Event::Key(key) = event::read()? else {
+            continue;
         };
 
-        let game_board = game.board();
-        let game_board_bounds = game_board.get_upper_bounds();
-        match input_key {
+        match InputKey::from_keycode(key.code) {
             Some(InputKey::Move(direction)) => {
                 snake.borrow_mut().rotate_to(direction);
-                apple.borrow_mut().be_eaten(game_board_bounds);
+                apple.borrow_mut().respawn(game_board_bounds);
+                renderer.render(game.board(), game.objects())?;
             }
             Some(InputKey::Quit) => break ExitCode::SUCCESS,
             None => {}
         }
-
-        renderer.render(game.board(), game.objects())?;
     };
 
     Ok(exit_code)

@@ -1,34 +1,32 @@
-use std::hash::RandomState;
-
 use rand::RngExt;
 
-use crate::{GameObject, GameObjectId, Render, Rotation, Texture, Transform, Vector2Int, assets};
+use crate::{
+    Bounds, GameObject, GameObjectId, Render, Rotation, Texture, Transform, Vector2Int, assets,
+};
 
 pub struct Apple {
     id: GameObjectId,
     transform: Transform,
 }
 impl Apple {
-    pub fn new() -> Self {
-        Self {
+    pub fn spawn(position_bounds: Bounds) -> Self {
+        let mut apple = Self {
             id: GameObjectId::new(),
             transform: Transform::default(),
-        }
+        };
+        apple.respawn(position_bounds);
+        apple
     }
 
-    // TODO think of less goofy name?
-    pub fn be_eaten(&mut self, position_upper_bounds: Vector2Int) {
+    pub fn respawn(&mut self, position_bounds: Bounds) {
         // TODO: make it a parameter to test deterministicslly
         let mut rng = rand::rng();
-        let Vector2Int {
-            x: x_upper,
-            y: y_upper,
-        } = position_upper_bounds;
+        let Bounds { start, end } = position_bounds;
 
-        self.transform.position = Vector2Int {
-            x: rng.random_range(0..=x_upper),
-            y: rng.random_range(0..=y_upper),
-        }
+        self.transform.position = Vector2Int::new(
+            rng.random_range(start.x..=end.x),
+            rng.random_range(start.y..=end.y),
+        );
     }
 }
 impl GameObject for Apple {
@@ -48,5 +46,25 @@ impl GameObject for Apple {
 impl Render for Apple {
     fn texture(&self) -> Texture {
         assets::APPLE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Apple;
+    use crate::{Bounds, GameObject, Vector2Int};
+
+    #[test]
+    fn spawn_accepts_each_inclusive_bound() {
+        for position in [Vector2Int::new(1, 1), Vector2Int::new(22, 22)] {
+            let bounds = Bounds {
+                start: position,
+                end: position,
+            };
+
+            let apple = Apple::spawn(bounds);
+
+            assert_eq!(apple.position(), position);
+        }
     }
 }
