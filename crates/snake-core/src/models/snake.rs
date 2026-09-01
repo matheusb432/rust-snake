@@ -1,5 +1,7 @@
+use std::collections::VecDeque;
+
 use crate::{
-    GameObject, GameObjectId, Move, MoveDirection, Render, Rotation, Texture, Transform,
+    GameObject, GameObjectId, Move, MoveDirection, Render, RenderTarget, Rotation, Transform,
     Vector2Int, assets, movement::compute_new_rotation,
 };
 
@@ -27,11 +29,6 @@ impl Snake {
         self.hp = SnakeHp::ZERO;
     }
 
-    // TODO: create based on `>~~{`
-    pub fn render_body(&self) -> String {
-        todo!()
-    }
-
     /// direction the snake's head is facing at, dictated by it's rotation
     pub fn head_direction(&self) -> SnakeRotation {
         self.transform.rotation.into()
@@ -41,8 +38,9 @@ impl Snake {
 }
 
 impl Render for Snake {
-    fn texture(&self) -> Texture {
-        assets::SNAKE_HEAD
+    fn texture(&self) -> RenderTarget<'_> {
+        // TODO: render from parts as Many
+        RenderTarget::One(assets::SNAKE_HEAD)
     }
 }
 
@@ -88,11 +86,8 @@ impl Default for SnakeHp {
         Self(Self::MIN_VALUE)
     }
 }
-
-// TODO: make logic to order each snake part
-/// body that governs which part is head/appendage/tail of the snake.
 #[derive(Debug, PartialEq, Eq)]
-pub struct SnakeBody(Vec<SnakePart>);
+pub struct SnakeBody(VecDeque<SnakePart>);
 impl SnakeBody {
     pub const MAX_SIZE: u16 = 500;
     pub fn from_hp(hp: SnakeHp) -> Self {
@@ -113,7 +108,7 @@ impl SnakeBody {
     // TODO: make fns to bump parts and mutate by position (to rotate the snek)
 
     fn parts_from_size(size: u16) -> SnakeBody {
-        Self(vec![SnakePart::default(); size.into()])
+        Self(VecDeque::from(vec![SnakePart::default(); size.into()]))
     }
 }
 

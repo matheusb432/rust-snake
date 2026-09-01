@@ -5,7 +5,7 @@ use crossterm::{
     queue,
     style::{Color, PrintStyledContent, Stylize},
 };
-use snake_core::{GameObject, Texture, TextureColor};
+use snake_core::{GameObject, GameObjectId, RenderTarget, Texture, TextureColor, Vector2Int};
 
 use crate::{
     board::{BOARD_SIZE_X, BOARD_SIZE_Y, Board},
@@ -36,23 +36,44 @@ impl<W: Write> CrosstermRenderer<W> {
     }
 
     fn render_object(&mut self, object: &dyn GameObject) -> io::Result<()> {
-        let position = object.position();
+        let object_id = object.id();
+
+        match object.texture() {
+            RenderTarget::One(texture) => {
+                self.render_texture_at(object_id, object.position(), texture)
+            }
+            RenderTarget::Many(positioned_textures) => {
+                for &(position, texture) in positioned_textures {
+                    self.render_texture_at(object_id, position, texture)?;
+                }
+
+                Ok(())
+            }
+        }
+    }
+
+    fn render_texture_at(
+        &mut self,
+        object_id: GameObjectId,
+        position: Vector2Int,
+        texture: Texture,
+    ) -> io::Result<()> {
         let grid_x = usize::try_from(position.x).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("object {} has a negative x position", object.id()),
+                format!("object {object_id} has a negative x position"),
             )
         })?;
         let terminal_y = u16::try_from(position.y).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("object {} has an invalid terminal y position", object.id()),
+                format!("object {object_id} has an invalid terminal y position"),
             )
         })?;
         if usize::from(terminal_y) >= BOARD_SIZE_Y {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("object {} is below the board", object.id()),
+                format!("object {object_id} is below the board"),
             ));
         }
 
@@ -60,7 +81,7 @@ impl<W: Write> CrosstermRenderer<W> {
             &mut self.output,
             MoveTo(Self::terminal_column(grid_x)?, terminal_y)
         )?;
-        self.render_texture(object.texture(), 1)
+        self.render_texture(texture, 1)
     }
 
     fn render_texture(&mut self, texture: Texture, width_columns: usize) -> io::Result<()> {
@@ -121,7 +142,7 @@ impl<W: Write> Renderer for CrosstermRenderer<W> {
         self.render_board(board)?;
 
         for object in objects {
-            self.render_object(object)?;
+            self.render_object(&*object.borrow())?;
         }
 
         self.output.flush()
@@ -130,7 +151,9 @@ impl<W: Write> Renderer for CrosstermRenderer<W> {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::{GameObject, GameObjectId, Render, Rotation, Texture, Vector2Int, assets};
+    use snake_core::{
+        GameObject, GameObjectId, Render, RenderTarget, Rotation, Texture, Vector2Int, assets,
+    };
 
     use super::{
         BOARD_INTERIOR_CELL_WIDTH_COLUMNS, BOARD_SIZE_X, BOARD_SIZE_Y, Board, CrosstermRenderer,
@@ -139,6 +162,7 @@ mod tests {
     struct TestObject {
         id: GameObjectId,
         position: Vector2Int,
+        positioned_textures: Option<Vec<(Vector2Int, Texture)>>,
     }
 
     impl TestObject {
@@ -146,13 +170,25 @@ mod tests {
             Self {
                 id: GameObjectId::new(),
                 position,
+                positioned_textures: None,
+            }
+        }
+
+        fn with_positioned_textures(positioned_textures: Vec<(Vector2Int, Texture)>) -> Self {
+            Self {
+                id: GameObjectId::new(),
+                position: Vector2Int::default(),
+                positioned_textures: Some(positioned_textures),
             }
         }
     }
 
     impl Render for TestObject {
-        fn texture(&self) -> Texture {
-            assets::APPLE
+        fn texture(&self) -> RenderTarget<'_> {
+            match &self.positioned_textures {
+                Some(positioned_textures) => RenderTarget::Many(positioned_textures),
+                None => RenderTarget::One(assets::APPLE),
+            }
         }
     }
 
@@ -203,6 +239,20 @@ mod tests {
                 .windows(6)
                 .any(|window| window == b"\x1b[2;2H")
         );
+    }
+
+    #[test]
+    fn render_object_prints_many_textures_at_their_positions() {
+        let object = TestObject::with_positioned_textures(vec![
+            (Vector2Int::new(1, 1), assets::APPLE),
+            (Vector2Int::new(2, 3), assets::SNAKE_PART),
+        ]);
+        let mut renderer = CrosstermRenderer { output: Vec::new() };
+
+        renderer.render_object(&object).unwrap();
+
+        assert_eq!(count_byte(&renderer.output, b'&'), 1);
+        assert_eq!(count_byte(&renderer.output, b'~'), 1);
     }
 
     #[test]

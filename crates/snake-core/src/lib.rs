@@ -6,7 +6,7 @@ pub mod render;
 
 pub use game_object::{GameObject, GameObjectId};
 pub use movement::{Move, MoveDirection};
-pub use render::{Render, Texture, TextureColor};
+pub use render::{Render, RenderTarget, Texture, TextureColor};
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Transform {

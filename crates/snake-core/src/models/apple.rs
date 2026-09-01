@@ -1,7 +1,7 @@
 use rand::RngExt;
 
 use crate::{
-    Bounds, GameObject, GameObjectId, Render, Rotation, Texture, Transform, Vector2Int, assets,
+    Bounds, GameObject, GameObjectId, Render, RenderTarget, Rotation, Transform, Vector2Int, assets,
 };
 
 pub struct Apple {
@@ -44,8 +44,8 @@ impl GameObject for Apple {
 }
 
 impl Render for Apple {
-    fn texture(&self) -> Texture {
-        assets::APPLE
+    fn texture(&self) -> RenderTarget<'_> {
+        RenderTarget::One(assets::APPLE)
     }
 }
 

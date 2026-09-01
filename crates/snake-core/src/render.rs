@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use crate::Vector2Int;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextureColor {
@@ -27,12 +27,12 @@ impl Texture {
     }
 }
 
-pub trait Render {
-    fn texture(&self) -> Texture;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderTarget<'a> {
+    One(Texture),
+    Many(&'a [(Vector2Int, Texture)]),
 }
 
-impl<T: Render + ?Sized> Render for RefCell<T> {
-    fn texture(&self) -> Texture {
-        self.borrow().texture()
-    }
+pub trait Render {
+    fn texture(&self) -> RenderTarget<'_>;
 }

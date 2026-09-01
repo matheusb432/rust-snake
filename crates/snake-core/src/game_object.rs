@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt};
+use std::fmt;
 
 use uuid::Uuid;
 
@@ -8,20 +8,6 @@ pub trait GameObject: Render {
     fn position(&self) -> Vector2Int;
     fn rotation(&self) -> Rotation;
     fn id(&self) -> GameObjectId;
-}
-
-impl<T: GameObject + ?Sized> GameObject for RefCell<T> {
-    fn position(&self) -> Vector2Int {
-        self.borrow().position()
-    }
-
-    fn rotation(&self) -> Rotation {
-        self.borrow().rotation()
-    }
-
-    fn id(&self) -> GameObjectId {
-        self.borrow().id()
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]

@@ -1,13 +1,19 @@
-use std::{collections::HashMap, error::Error, fmt, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, hash_map::Entry},
+    error::Error,
+    fmt,
+    rc::Rc,
+};
 
 use snake_core::{GameObject, GameObjectId};
 
 use crate::board::Board;
 
-pub(crate) type GameObjectIterator<'a> = Box<dyn Iterator<Item = &'a dyn GameObject> + 'a>;
+pub(crate) type GameObjectIterator<'a> = Box<dyn Iterator<Item = &'a RefCell<dyn GameObject>> + 'a>;
 
 pub(crate) struct Game {
-    objects: HashMap<GameObjectId, Rc<dyn GameObject>>,
+    objects: HashMap<GameObjectId, Rc<RefCell<dyn GameObject>>>,
     board: Board,
 }
 
@@ -19,14 +25,19 @@ impl Game {
         }
     }
 
-    pub fn place_object(&mut self, object: Rc<dyn GameObject>) -> Result<(), PlaceObjectError> {
+    pub fn insert_object<T>(&mut self, object: T) -> Result<Rc<RefCell<T>>, InsertObjectError>
+    where
+        T: GameObject + 'static,
+    {
         let id = object.id();
-        if self.objects.contains_key(&id) {
-            return Err(PlaceObjectError::ObjectAlreadyPlaced { id });
-        }
+        let Entry::Vacant(entry) = self.objects.entry(id) else {
+            return Err(InsertObjectError::ObjectAlreadyPlaced { id });
+        };
 
-        self.objects.insert(id, object);
-        Ok(())
+        let object_handle = Rc::new(RefCell::new(object));
+        let game_object_handle: Rc<RefCell<dyn GameObject>> = object_handle.clone();
+        entry.insert(game_object_handle);
+        Ok(object_handle)
     }
 
     pub fn board(&self) -> &Board {
@@ -34,7 +45,7 @@ impl Game {
     }
 
     pub fn objects(&self) -> GameObjectIterator<'_> {
-        Box::new(self.objects.values().map(|object| object.as_ref()))
+        Box::new(self.objects.values().map(Rc::as_ref))
     }
 }
 
@@ -45,11 +56,11 @@ impl Default for Game {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum PlaceObjectError {
+pub(crate) enum InsertObjectError {
     ObjectAlreadyPlaced { id: GameObjectId },
 }
 
-impl fmt::Display for PlaceObjectError {
+impl fmt::Display for InsertObjectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ObjectAlreadyPlaced { id } => {
@@ -59,17 +70,15 @@ impl fmt::Display for PlaceObjectError {
     }
 }
 
-impl Error for PlaceObjectError {}
+impl Error for InsertObjectError {}
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use snake_core::{
-        GameObject, GameObjectId, Render, Rotation, Texture, TextureColor, Vector2Int,
+        GameObject, GameObjectId, Render, RenderTarget, Rotation, Texture, TextureColor, Vector2Int,
     };
 
-    use super::Game;
+    use super::{Game, InsertObjectError};
 
     struct Foo {
         id: GameObjectId,
@@ -86,8 +95,8 @@ mod tests {
     }
 
     impl Render for Foo {
-        fn texture(&self) -> Texture {
-            Texture::new('f', TextureColor::White)
+        fn texture(&self) -> RenderTarget<'_> {
+            RenderTarget::One(Texture::new('f', TextureColor::White))
         }
     }
 
@@ -106,27 +115,51 @@ mod tests {
     }
 
     #[test]
-    fn places_an_object() {
+    fn inserts_an_object_and_returns_its_handle() {
         let mut game = Game::new();
         let foo = Foo::at(Vector2Int::new(4, 7));
         let id = foo.id();
+        let updated_position = Vector2Int::new(8, 9);
 
-        assert_eq!(game.place_object(Rc::new(foo)), Ok(()));
-        assert!(game.objects().any(|object| object.id() == id));
+        let foo_handle = game.insert_object(foo).unwrap();
+        foo_handle.borrow_mut().position = updated_position;
+
+        assert_eq!(
+            game.objects()
+                .find(|object| object.borrow().id() == id)
+                .map(|object| object.borrow().position()),
+            Some(updated_position)
+        );
     }
 
     #[test]
-    fn places_objects_at_the_same_position() {
+    fn inserts_objects_at_the_same_position() {
         let mut game = Game::new();
         let position = Vector2Int::new(24, 7);
 
-        assert_eq!(game.place_object(Rc::new(Foo::at(position))), Ok(()));
-        assert_eq!(game.place_object(Rc::new(Foo::at(position))), Ok(()));
+        assert!(game.insert_object(Foo::at(position)).is_ok());
+        assert!(game.insert_object(Foo::at(position)).is_ok());
         assert_eq!(
             game.objects()
-                .filter(|object| object.position() == position)
+                .filter(|object| object.borrow().position() == position)
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn rejects_an_object_with_a_duplicate_id() {
+        let mut game = Game::new();
+        let id = GameObjectId::new();
+        let position = Vector2Int::new(4, 7);
+
+        assert!(
+            game.insert_object(Foo { id, position }).is_ok(),
+            "the first object should be inserted"
+        );
+        assert_eq!(
+            game.insert_object(Foo { id, position }).map(|_| ()),
+            Err(InsertObjectError::ObjectAlreadyPlaced { id })
         );
     }
 }
