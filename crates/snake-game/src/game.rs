@@ -95,7 +95,7 @@ mod tests {
     }
 
     impl Render for Foo {
-        fn texture(&self) -> RenderTarget<'_> {
+        fn texture(&self) -> RenderTarget {
             RenderTarget::One(Texture::new('f', TextureColor::White))
         }
     }

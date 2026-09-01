@@ -43,7 +43,7 @@ impl<W: Write> CrosstermRenderer<W> {
                 self.render_texture_at(object_id, object.position(), texture)
             }
             RenderTarget::Many(positioned_textures) => {
-                for &(position, texture) in positioned_textures {
+                for (position, texture) in positioned_textures {
                     self.render_texture_at(object_id, position, texture)?;
                 }
 
@@ -184,9 +184,9 @@ mod tests {
     }
 
     impl Render for TestObject {
-        fn texture(&self) -> RenderTarget<'_> {
+        fn texture(&self) -> RenderTarget {
             match &self.positioned_textures {
-                Some(positioned_textures) => RenderTarget::Many(positioned_textures),
+                Some(positioned_textures) => RenderTarget::Many(positioned_textures.clone()),
                 None => RenderTarget::One(assets::APPLE),
             }
         }

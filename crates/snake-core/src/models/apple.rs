@@ -44,7 +44,7 @@ impl GameObject for Apple {
 }
 
 impl Render for Apple {
-    fn texture(&self) -> RenderTarget<'_> {
+    fn texture(&self) -> RenderTarget {
         RenderTarget::One(assets::APPLE)
     }
 }

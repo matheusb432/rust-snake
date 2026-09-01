@@ -27,12 +27,12 @@ impl Texture {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RenderTarget<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderTarget {
     One(Texture),
-    Many(&'a [(Vector2Int, Texture)]),
+    Many(Vec<(Vector2Int, Texture)>),
 }
 
 pub trait Render {
-    fn texture(&self) -> RenderTarget<'_>;
+    fn texture(&self) -> RenderTarget;
 }
