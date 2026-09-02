@@ -49,6 +49,7 @@ impl Render for Apple {
         visit(RenderItem::glyph(
             Vector2Int::default(),
             assets::APPLE,
+            self.transform.rotation,
             ZIndex::DEFAULT,
         ));
     }

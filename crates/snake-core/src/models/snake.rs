@@ -62,8 +62,13 @@ impl Snake {
 
 impl Render for Snake {
     fn visit_render_items(&self, visit: &mut dyn FnMut(RenderItem)) {
-        for (position_local, texture) in self.body.parts_textures() {
-            visit(RenderItem::glyph(position_local, texture, ZIndex::DEFAULT));
+        for (position_local, texture, rotation) in self.body.parts_textures() {
+            visit(RenderItem::glyph(
+                position_local,
+                texture,
+                rotation,
+                ZIndex::DEFAULT,
+            ));
         }
     }
 }
@@ -86,6 +91,9 @@ impl Move for Snake {
     fn rotate_to(&mut self, direction: MoveDirection) {
         if let Some(rotation) = compute_new_rotation(direction, self.transform.rotation) {
             self.transform.rotation = rotation;
+            if let Some(head) = self.body.parts.front_mut() {
+                head.rotation = rotation;
+            }
         }
     }
 }
@@ -149,8 +157,10 @@ impl SnakeBody {
         u16::try_from(self.parts.len()).expect("snake body size cannot exceed its u16 maximum")
     }
 
-    fn parts_textures(&self) -> impl Iterator<Item = (Vector2Int, Texture)> + '_ {
-        self.parts.iter().map(|part| (part.position, part.texture))
+    fn parts_textures(&self) -> impl Iterator<Item = (Vector2Int, Texture, Rotation)> + '_ {
+        self.parts
+            .iter()
+            .map(|part| (part.position, part.texture, part.rotation))
     }
 
     fn from_valid_size(size: u16) -> Self {
@@ -273,11 +283,20 @@ mod tests {
                 Vector2Int::new(-2, -1),
             ]
         );
+        assert_eq!(render_characters(&snake), ['v', '~', '~', '~']);
     }
 
     fn render_positions_local(snake: &Snake) -> Vec<Vector2Int> {
         let mut positions = Vec::new();
         snake.visit_render_items(&mut |item| positions.push(item.position_local()));
         positions
+    }
+
+    fn render_characters(snake: &Snake) -> Vec<char> {
+        let mut characters = Vec::new();
+        snake.visit_render_items(&mut |item| {
+            characters.push(item.texture().character(item.rotation()));
+        });
+        characters
     }
 }

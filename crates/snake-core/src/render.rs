@@ -1,4 +1,4 @@
-use crate::Vector2Int;
+use crate::{Rotation, Vector2Int};
 
 /// Draw order key where lower values render first.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -22,21 +22,67 @@ pub enum TextureColor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Texture {
-    character: char,
+    character: TextureCharacter,
     color: TextureColor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextureCharacter {
+    Fixed(char),
+    Rotated {
+        right: char,
+        down: char,
+        left: char,
+        up: char,
+    },
 }
 
 impl Texture {
     pub const fn new(character: char, color: TextureColor) -> Self {
-        Self { character, color }
+        Self {
+            character: TextureCharacter::Fixed(character),
+            color,
+        }
     }
 
-    pub const fn character(self) -> char {
-        self.character
+    pub const fn new_rotated(
+        right: char,
+        down: char,
+        left: char,
+        up: char,
+        color: TextureColor,
+    ) -> Self {
+        Self {
+            character: TextureCharacter::Rotated {
+                right,
+                down,
+                left,
+                up,
+            },
+            color,
+        }
     }
 
     pub const fn color(self) -> TextureColor {
         self.color
+    }
+
+    pub const fn character(self, rotation: Rotation) -> char {
+        match self.character {
+            TextureCharacter::Fixed(character) => character,
+            TextureCharacter::Rotated {
+                right,
+                down,
+                left,
+                up,
+            } => match rotation {
+                Rotation::RIGHT => right,
+                Rotation::DOWN => down,
+                Rotation::LEFT => left,
+                Rotation::UP => up,
+                _ => right,
+            },
+        }
     }
 }
 
@@ -44,15 +90,22 @@ impl Texture {
 pub struct RenderItem {
     position_local: Vector2Int,
     texture: Texture,
+    rotation: Rotation,
     z_index: ZIndex,
     fills_cell: bool,
 }
 
 impl RenderItem {
-    pub const fn glyph(position_local: Vector2Int, texture: Texture, z_index: ZIndex) -> Self {
+    pub const fn glyph(
+        position_local: Vector2Int,
+        texture: Texture,
+        rotation: Rotation,
+        z_index: ZIndex,
+    ) -> Self {
         Self {
             position_local,
             texture,
+            rotation,
             z_index,
             fills_cell: false,
         }
@@ -61,11 +114,13 @@ impl RenderItem {
     pub const fn filled_cell(
         position_local: Vector2Int,
         texture: Texture,
+        rotation: Rotation,
         z_index: ZIndex,
     ) -> Self {
         Self {
             position_local,
             texture,
+            rotation,
             z_index,
             fills_cell: true,
         }
@@ -77,6 +132,10 @@ impl RenderItem {
 
     pub const fn texture(self) -> Texture {
         self.texture
+    }
+
+    pub const fn rotation(self) -> Rotation {
+        self.rotation
     }
 
     pub const fn z_index(self) -> ZIndex {

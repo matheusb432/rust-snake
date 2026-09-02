@@ -5,7 +5,7 @@ use crossterm::{
     queue,
     style::{Color, PrintStyledContent, Stylize},
 };
-use snake_core::{Texture, TextureColor};
+use snake_core::{Rotation, Texture, TextureColor};
 
 use crate::render::{RenderCell, RenderFrame, RenderViewport, Renderer};
 
@@ -55,12 +55,17 @@ impl<W: Write> CrosstermRenderer<W> {
         } else {
             1
         };
-        self.render_texture(cell.texture(), width_columns)
+        self.render_texture(cell.texture(), cell.rotation(), width_columns)
     }
 
-    fn render_texture(&mut self, texture: Texture, width_columns: usize) -> io::Result<()> {
+    fn render_texture(
+        &mut self,
+        texture: Texture,
+        rotation: Rotation,
+        width_columns: usize,
+    ) -> io::Result<()> {
         let styled_character = texture
-            .character()
+            .character(rotation)
             .with(Self::crossterm_color(texture.color()));
 
         for _ in 0..width_columns {
@@ -123,7 +128,7 @@ impl<W: Write> Renderer for CrosstermRenderer<W> {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::{Texture, Vector2Int, ZIndex, assets};
+    use snake_core::{Rotation, Texture, Vector2Int, ZIndex, assets};
 
     use super::{CrosstermRenderer, GRID_CELL_WIDTH_COLUMNS};
     use crate::render::{RenderCell, RenderFrame, RenderViewport, Renderer};
@@ -133,8 +138,18 @@ mod tests {
         let frame = RenderFrame::new(
             RenderViewport::new(24, 24),
             vec![
-                RenderCell::new(Vector2Int::new(1, 1), assets::APPLE, ZIndex::DEFAULT),
-                RenderCell::new(Vector2Int::new(2, 3), assets::SNAKE_PART, ZIndex::DEFAULT),
+                RenderCell::new(
+                    Vector2Int::new(1, 1),
+                    assets::APPLE,
+                    Rotation::default(),
+                    ZIndex::DEFAULT,
+                ),
+                RenderCell::new(
+                    Vector2Int::new(2, 3),
+                    assets::SNAKE_PART,
+                    Rotation::default(),
+                    ZIndex::DEFAULT,
+                ),
             ],
         );
         let mut renderer = CrosstermRenderer { output: Vec::new() };
@@ -157,9 +172,17 @@ mod tests {
         let frame = RenderFrame::new(
             viewport,
             vec![
-                filled_render_cell(Vector2Int::new(0, 0), assets::WALL_DIAGONAL),
-                filled_render_cell(Vector2Int::new(1, 0), assets::WALL_Y),
-                filled_render_cell(Vector2Int::new(3, 0), assets::WALL_DIAGONAL),
+                filled_render_cell(
+                    Vector2Int::new(0, 0),
+                    assets::WALL_DIAGONAL,
+                    Rotation::default(),
+                ),
+                filled_render_cell(Vector2Int::new(1, 0), assets::WALL, Rotation::DOWN),
+                filled_render_cell(
+                    Vector2Int::new(3, 0),
+                    assets::WALL_DIAGONAL,
+                    Rotation::default(),
+                ),
             ],
         );
         let mut renderer = CrosstermRenderer { output: Vec::new() };
@@ -194,7 +217,12 @@ mod tests {
         ] {
             let frame = RenderFrame::new(
                 viewport,
-                vec![RenderCell::new(position, assets::APPLE, ZIndex::DEFAULT)],
+                vec![RenderCell::new(
+                    position,
+                    assets::APPLE,
+                    Rotation::default(),
+                    ZIndex::DEFAULT,
+                )],
             );
             let mut renderer = CrosstermRenderer { output: Vec::new() };
 
@@ -204,8 +232,12 @@ mod tests {
         }
     }
 
-    fn filled_render_cell(position_world: Vector2Int, texture: Texture) -> RenderCell {
-        RenderCell::from_filled_cell(position_world, texture, ZIndex::BACKGROUND)
+    fn filled_render_cell(
+        position_world: Vector2Int,
+        texture: Texture,
+        rotation: Rotation,
+    ) -> RenderCell {
+        RenderCell::from_filled_cell(position_world, texture, rotation, ZIndex::BACKGROUND)
     }
 
     fn count_byte(bytes: &[u8], expected: u8) -> usize {

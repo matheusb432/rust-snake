@@ -1,6 +1,6 @@
 use std::array;
 
-use snake_core::{Render, RenderItem, Texture, Vector2Int, ZIndex, assets};
+use snake_core::{Render, RenderItem, Rotation, Texture, Vector2Int, ZIndex, assets};
 
 pub(crate) const BOARD_SIZE_X: usize = 24;
 pub(crate) const BOARD_SIZE_Y: usize = 24;
@@ -40,6 +40,14 @@ impl Board {
         self.inner[board_x][board_y]
     }
 
+    fn rotation_at(board_x: usize, board_y: usize) -> Rotation {
+        let position = Vector2Int::new(board_x as i32, board_y as i32);
+        match Self::classify_position(position) {
+            BoardPosition::WallY => Rotation::DOWN,
+            _ => Rotation::RIGHT,
+        }
+    }
+
     pub fn classify_position(position: Vector2Int) -> BoardPosition {
         let x_max = (BOARD_SIZE_X - 1) as i32;
         let y_max = (BOARD_SIZE_Y - 1) as i32;
@@ -63,6 +71,7 @@ impl Render for Board {
                 visit(RenderItem::filled_cell(
                     Vector2Int::new(board_x as i32, board_y as i32),
                     self.texture_at(board_x, board_y),
+                    Self::rotation_at(board_x, board_y),
                     ZIndex::BACKGROUND,
                 ));
             }
@@ -77,8 +86,7 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 
             match Board::classify_position(position) {
                 BoardPosition::Corner => assets::WALL_DIAGONAL,
-                BoardPosition::WallX => assets::WALL_X,
-                BoardPosition::WallY => assets::WALL_Y,
+                BoardPosition::WallX | BoardPosition::WallY => assets::WALL,
                 BoardPosition::Inside => assets::BLANK,
             }
         })
@@ -89,7 +97,7 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 mod tests {
     use snake_core::assets;
 
-    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, create_default_board};
+    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, Board, create_default_board};
 
     #[test]
     fn create_default_board_surrounds_blank_inside_with_walls() {
@@ -110,20 +118,19 @@ mod tests {
         assert!(
             board[0][1..y_max]
                 .iter()
-                .all(|texture| *texture == assets::WALL_X)
+                .all(|texture| *texture == assets::WALL)
         );
         assert!(
             board[x_max][1..y_max]
                 .iter()
-                .all(|texture| *texture == assets::WALL_X)
+                .all(|texture| *texture == assets::WALL)
         );
 
-        assert!(board[1..x_max].iter().all(|col| col[0] == assets::WALL_Y));
-        assert!(
-            board[1..x_max]
-                .iter()
-                .all(|col| col[y_max] == assets::WALL_Y)
-        );
+        assert!(board[1..x_max].iter().all(|col| col[0] == assets::WALL));
+        assert!(board[1..x_max].iter().all(|col| col[y_max] == assets::WALL));
+
+        assert_eq!(board[0][1].character(Board::rotation_at(0, 1)), '|');
+        assert_eq!(board[1][0].character(Board::rotation_at(1, 0)), '_');
 
         assert!(board[1..x_max].iter().all(|col| {
             col[1..y_max]

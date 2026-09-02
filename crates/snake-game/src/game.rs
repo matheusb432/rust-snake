@@ -96,8 +96,8 @@ impl Error for InsertObjectError {}
 #[cfg(test)]
 mod tests {
     use snake_core::{
-        GameObject, GameObjectId, Render, RenderItem, Rotation, Texture, TextureColor, Vector2Int,
-        ZIndex, models::snake::Snake,
+        GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
+        TextureColor, Vector2Int, ZIndex, models::snake::Snake,
     };
 
     use super::{Game, InsertObjectError};
@@ -121,6 +121,7 @@ mod tests {
             visit(RenderItem::glyph(
                 Vector2Int::default(),
                 Texture::new('f', TextureColor::White),
+                Rotation::default(),
                 ZIndex::DEFAULT,
             ));
         }
@@ -151,7 +152,8 @@ mod tests {
 
         assert!(
             game.render_frame().cells().iter().any(|cell| {
-                cell.position_world() == updated_position && cell.texture().character() == 'f'
+                cell.position_world() == updated_position
+                    && cell.texture().character(cell.rotation()) == 'f'
             }),
             "the stored object should reflect mutations through its returned handle"
         );
@@ -169,7 +171,8 @@ mod tests {
                 .cells()
                 .iter()
                 .filter(|cell| {
-                    cell.position_world() == position && cell.texture().character() == 'f'
+                    cell.position_world() == position
+                        && cell.texture().character(cell.rotation()) == 'f'
                 })
                 .count(),
             2
@@ -205,31 +208,37 @@ mod tests {
                 .cells()
                 .iter()
                 .filter(|cell| cell.position_world() == position)
-                .map(|cell| cell.texture().character())
+                .map(|cell| cell.texture().character(cell.rotation()))
                 .collect::<Vec<_>>(),
             [' ', 'f']
         );
     }
 
     #[test]
-    fn render_frame_resolves_snake_parts_relative_to_the_snake() {
+    fn render_frame_resolves_rotated_snake_parts_relative_to_the_snake() {
         let mut game = Game::new();
         let mut snake = Snake::spawn();
         snake.set_position(Vector2Int::new(10, 10));
+        snake.rotate_to(MoveDirection::Down);
         game.insert_object(snake).unwrap();
 
         let frame = game.render_frame();
         let snake_cells = frame
             .cells()
             .iter()
-            .filter(|cell| matches!(cell.texture().character(), '{' | '~'))
-            .map(|cell| (cell.position_world(), cell.texture().character()))
+            .filter(|cell| matches!(cell.texture().character(cell.rotation()), 'v' | '~'))
+            .map(|cell| {
+                (
+                    cell.position_world(),
+                    cell.texture().character(cell.rotation()),
+                )
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(
             snake_cells,
             [
-                (Vector2Int::new(10, 10), '{'),
+                (Vector2Int::new(10, 10), 'v'),
                 (Vector2Int::new(9, 10), '~'),
                 (Vector2Int::new(8, 10), '~'),
                 (Vector2Int::new(7, 10), '~'),

@@ -1,6 +1,6 @@
 use std::io;
 
-use snake_core::{Render, RenderItem, Texture, Vector2Int, ZIndex};
+use snake_core::{Render, RenderItem, Rotation, Texture, Vector2Int, ZIndex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RenderViewport {
@@ -29,16 +29,23 @@ impl RenderViewport {
 pub(crate) struct RenderCell {
     position_world: Vector2Int,
     texture: Texture,
+    rotation: Rotation,
     z_index: ZIndex,
     fills_cell: bool,
 }
 
 impl RenderCell {
     #[cfg(test)]
-    pub(crate) const fn new(position_world: Vector2Int, texture: Texture, z_index: ZIndex) -> Self {
+    pub(crate) const fn new(
+        position_world: Vector2Int,
+        texture: Texture,
+        rotation: Rotation,
+        z_index: ZIndex,
+    ) -> Self {
         Self {
             position_world,
             texture,
+            rotation,
             z_index,
             fills_cell: false,
         }
@@ -48,6 +55,7 @@ impl RenderCell {
         Self {
             position_world: position_origin + item.position_local(),
             texture: item.texture(),
+            rotation: item.rotation(),
             z_index: item.z_index(),
             fills_cell: item.fills_cell(),
         }
@@ -57,11 +65,13 @@ impl RenderCell {
     pub(crate) const fn from_filled_cell(
         position_world: Vector2Int,
         texture: Texture,
+        rotation: Rotation,
         z_index: ZIndex,
     ) -> Self {
         Self {
             position_world,
             texture,
+            rotation,
             z_index,
             fills_cell: true,
         }
@@ -73,6 +83,10 @@ impl RenderCell {
 
     pub(crate) const fn texture(self) -> Texture {
         self.texture
+    }
+
+    pub(crate) const fn rotation(self) -> Rotation {
+        self.rotation
     }
 
     pub(crate) const fn fills_cell(self) -> bool {
@@ -117,7 +131,7 @@ pub(crate) trait Renderer {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::{Texture, TextureColor, Vector2Int, ZIndex};
+    use snake_core::{Rotation, Texture, TextureColor, Vector2Int, ZIndex};
 
     use super::{RenderCell, RenderFrame, RenderViewport};
 
@@ -136,7 +150,7 @@ mod tests {
             frame
                 .cells()
                 .iter()
-                .map(|cell| cell.texture().character())
+                .map(|cell| cell.texture().character(cell.rotation()))
                 .collect::<Vec<_>>(),
             ['b', 'h', 's']
         );
@@ -146,6 +160,7 @@ mod tests {
         RenderCell::new(
             Vector2Int::default(),
             Texture::new(character, TextureColor::White),
+            Rotation::default(),
             z_index,
         )
     }
