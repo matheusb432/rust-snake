@@ -8,7 +8,7 @@ use std::ops::Add;
 
 pub use game_object::{GameObject, GameObjectId};
 pub use movement::{Move, MoveDirection};
-pub use render::{Render, RenderTarget, Texture, TextureColor};
+pub use render::{Render, RenderItem, Texture, TextureColor, ZIndex};
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Transform {
@@ -45,7 +45,7 @@ impl Add for Vector2Int {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self::new(self.x + rhs.x, self.y + self.y)
+        Self::new(self.x + rhs.x, self.y + rhs.y)
     }
 }
 

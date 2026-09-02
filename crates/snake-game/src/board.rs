@@ -1,6 +1,6 @@
 use std::array;
 
-use snake_core::{Bounds, Texture, Vector2Int, assets};
+use snake_core::{Render, RenderItem, Texture, Vector2Int, ZIndex, assets};
 
 pub(crate) const BOARD_SIZE_X: usize = 24;
 pub(crate) const BOARD_SIZE_Y: usize = 24;
@@ -40,13 +40,6 @@ impl Board {
         self.inner[board_x][board_y]
     }
 
-    pub const fn bounds(&self) -> Bounds {
-        Bounds {
-            start: Vector2Int::new(1, 1),
-            end: Vector2Int::new((BOARD_SIZE_X - 2) as i32, (BOARD_SIZE_Y - 2) as i32),
-        }
-    }
-
     pub fn classify_position(position: Vector2Int) -> BoardPosition {
         let x_max = (BOARD_SIZE_X - 1) as i32;
         let y_max = (BOARD_SIZE_Y - 1) as i32;
@@ -60,6 +53,20 @@ impl Board {
 impl Default for Board {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Render for Board {
+    fn visit_render_items(&self, visit: &mut dyn FnMut(RenderItem)) {
+        for board_y in 0..BOARD_SIZE_Y {
+            for board_x in 0..BOARD_SIZE_X {
+                visit(RenderItem::filled_cell(
+                    Vector2Int::new(board_x as i32, board_y as i32),
+                    self.texture_at(board_x, board_y),
+                    ZIndex::BACKGROUND,
+                ));
+            }
+        }
     }
 }
 
@@ -80,17 +87,9 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::{Vector2Int, assets};
+    use snake_core::assets;
 
-    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, Board, create_default_board};
-
-    #[test]
-    fn playable_bounds_exclude_the_board_walls() {
-        let bounds = Board::new().bounds();
-
-        assert_eq!(bounds.start, Vector2Int::new(1, 1));
-        assert_eq!(bounds.end, Vector2Int::new(22, 22));
-    }
+    use super::{BOARD_SIZE_X, BOARD_SIZE_Y, create_default_board};
 
     #[test]
     fn create_default_board_surrounds_blank_inside_with_walls() {

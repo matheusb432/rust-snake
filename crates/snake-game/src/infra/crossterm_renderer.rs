@@ -5,83 +5,57 @@ use crossterm::{
     queue,
     style::{Color, PrintStyledContent, Stylize},
 };
-use snake_core::{GameObject, GameObjectId, RenderTarget, Texture, TextureColor, Vector2Int};
+use snake_core::{Texture, TextureColor};
 
-use crate::{
-    board::{BOARD_SIZE_X, BOARD_SIZE_Y, Board},
-    game::GameObjectIterator,
-    render::Renderer,
-};
+use crate::render::{RenderCell, RenderFrame, RenderViewport, Renderer};
 
-const BOARD_INTERIOR_CELL_WIDTH_COLUMNS: usize = 2;
+const GRID_CELL_WIDTH_COLUMNS: usize = 2;
 
 pub(crate) struct CrosstermRenderer<W = Stdout> {
     output: W,
 }
 
 impl<W: Write> CrosstermRenderer<W> {
-    fn render_board(&mut self, board: &Board) -> io::Result<()> {
-        for board_y in 0..BOARD_SIZE_Y {
-            queue!(&mut self.output, MoveTo(0, board_y as u16))?;
-
-            for board_x in 0..BOARD_SIZE_X {
-                self.render_texture(
-                    board.texture_at(board_x, board_y),
-                    Self::board_cell_width_columns(board_x),
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn render_object(&mut self, object: &dyn GameObject) -> io::Result<()> {
-        let object_id = object.id();
-
-        match object.texture() {
-            RenderTarget::One(texture) => {
-                self.render_texture_at(object_id, object.position(), texture)
-            }
-            RenderTarget::Many(positioned_textures) => {
-                for (position, texture) in positioned_textures {
-                    self.render_texture_at(object_id, position, texture)?;
-                }
-
-                Ok(())
-            }
-        }
-    }
-
-    fn render_texture_at(
-        &mut self,
-        object_id: GameObjectId,
-        position: Vector2Int,
-        texture: Texture,
-    ) -> io::Result<()> {
-        let grid_x = usize::try_from(position.x).map_err(|_| {
+    fn render_cell(&mut self, cell: RenderCell, viewport: RenderViewport) -> io::Result<()> {
+        let position_world = cell.position_world();
+        let grid_x = usize::try_from(position_world.x).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("object {object_id} has a negative x position"),
+                format!(
+                    "render cell has a negative x position: {}",
+                    position_world.x
+                ),
             )
         })?;
-        let terminal_y = u16::try_from(position.y).map_err(|_| {
+        let terminal_y = u16::try_from(position_world.y).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("object {object_id} has an invalid terminal y position"),
+                format!(
+                    "render cell has an invalid y position: {}",
+                    position_world.y
+                ),
             )
         })?;
-        if usize::from(terminal_y) >= BOARD_SIZE_Y {
+        if usize::from(terminal_y) >= viewport.height_cells() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("object {object_id} is below the board"),
+                format!(
+                    "render cell y position {} is outside the viewport",
+                    position_world.y
+                ),
             ));
         }
 
         queue!(
             &mut self.output,
-            MoveTo(Self::terminal_column(grid_x)?, terminal_y)
+            MoveTo(Self::terminal_column(grid_x, viewport)?, terminal_y)
         )?;
-        self.render_texture(texture, 1)
+        let width_columns = if cell.fills_cell() {
+            Self::grid_cell_width_columns(grid_x, viewport)
+        } else {
+            1
+        };
+        self.render_texture(cell.texture(), width_columns)
     }
 
     fn render_texture(&mut self, texture: Texture, width_columns: usize) -> io::Result<()> {
@@ -96,25 +70,25 @@ impl<W: Write> CrosstermRenderer<W> {
         Ok(())
     }
 
-    fn board_cell_width_columns(board_x: usize) -> usize {
-        if board_x == 0 || board_x == BOARD_SIZE_X - 1 {
+    fn grid_cell_width_columns(grid_x: usize, viewport: RenderViewport) -> usize {
+        if grid_x == 0 || grid_x == viewport.width_cells() - 1 {
             1
         } else {
-            BOARD_INTERIOR_CELL_WIDTH_COLUMNS
+            GRID_CELL_WIDTH_COLUMNS
         }
     }
 
-    fn terminal_column(grid_x: usize) -> io::Result<u16> {
-        if grid_x >= BOARD_SIZE_X {
+    fn terminal_column(grid_x: usize, viewport: RenderViewport) -> io::Result<u16> {
+        if grid_x >= viewport.width_cells() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("grid x position {grid_x} is outside the board"),
+                format!("grid x position {grid_x} is outside the viewport"),
             ));
         }
 
         let terminal_column = match grid_x {
             0 => 0,
-            _ => 1 + (grid_x - 1) * BOARD_INTERIOR_CELL_WIDTH_COLUMNS,
+            _ => 1 + (grid_x - 1) * GRID_CELL_WIDTH_COLUMNS,
         };
 
         u16::try_from(terminal_column).map_err(io::Error::other)
@@ -138,11 +112,9 @@ impl Default for CrosstermRenderer<Stdout> {
 }
 
 impl<W: Write> Renderer for CrosstermRenderer<W> {
-    fn render(&mut self, board: &Board, objects: GameObjectIterator<'_>) -> io::Result<()> {
-        self.render_board(board)?;
-
-        for object in objects {
-            self.render_object(&*object.borrow())?;
+    fn render(&mut self, frame: &RenderFrame) -> io::Result<()> {
+        for cell in frame.cells() {
+            self.render_cell(*cell, frame.viewport())?;
         }
 
         self.output.flush()
@@ -151,88 +123,26 @@ impl<W: Write> Renderer for CrosstermRenderer<W> {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::{
-        GameObject, GameObjectId, Render, RenderTarget, Rotation, Texture, Vector2Int, assets,
-    };
+    use snake_core::{Texture, Vector2Int, ZIndex, assets};
 
-    use super::{
-        BOARD_INTERIOR_CELL_WIDTH_COLUMNS, BOARD_SIZE_X, BOARD_SIZE_Y, Board, CrosstermRenderer,
-    };
-
-    struct TestObject {
-        id: GameObjectId,
-        position: Vector2Int,
-        positioned_textures: Option<Vec<(Vector2Int, Texture)>>,
-    }
-
-    impl TestObject {
-        fn at(position: Vector2Int) -> Self {
-            Self {
-                id: GameObjectId::new(),
-                position,
-                positioned_textures: None,
-            }
-        }
-
-        fn with_positioned_textures(positioned_textures: Vec<(Vector2Int, Texture)>) -> Self {
-            Self {
-                id: GameObjectId::new(),
-                position: Vector2Int::default(),
-                positioned_textures: Some(positioned_textures),
-            }
-        }
-    }
-
-    impl Render for TestObject {
-        fn texture(&self) -> RenderTarget {
-            match &self.positioned_textures {
-                Some(positioned_textures) => RenderTarget::Many(positioned_textures.clone()),
-                None => RenderTarget::One(assets::APPLE),
-            }
-        }
-    }
-
-    impl GameObject for TestObject {
-        fn position(&self) -> Vector2Int {
-            self.position
-        }
-
-        fn rotation(&self) -> Rotation {
-            Rotation::default()
-        }
-
-        fn id(&self) -> GameObjectId {
-            self.id
-        }
-    }
+    use super::{CrosstermRenderer, GRID_CELL_WIDTH_COLUMNS};
+    use crate::render::{RenderCell, RenderFrame, RenderViewport, Renderer};
 
     #[test]
-    fn render_board_keeps_outer_walls_one_column_wide() {
+    fn render_frame_prints_cells_at_their_world_positions() {
+        let frame = RenderFrame::new(
+            RenderViewport::new(24, 24),
+            vec![
+                RenderCell::new(Vector2Int::new(1, 1), assets::APPLE, ZIndex::DEFAULT),
+                RenderCell::new(Vector2Int::new(2, 3), assets::SNAKE_PART, ZIndex::DEFAULT),
+            ],
+        );
         let mut renderer = CrosstermRenderer { output: Vec::new() };
 
-        renderer.render_board(&Board::new()).unwrap();
-
-        let output = renderer.output;
-        assert_eq!(count_byte(&output, b'x'), 4);
-        assert_eq!(count_byte(&output, b'|'), (BOARD_SIZE_Y - 2) * 2);
-        assert_eq!(
-            count_byte(&output, b'_'),
-            (BOARD_SIZE_X - 2) * BOARD_INTERIOR_CELL_WIDTH_COLUMNS * 2
-        );
-        assert_eq!(
-            count_byte(&output, b' '),
-            (BOARD_SIZE_X - 2) * BOARD_INTERIOR_CELL_WIDTH_COLUMNS * (BOARD_SIZE_Y - 2)
-        );
-    }
-
-    #[test]
-    fn render_object_prints_one_texture_at_its_board_position() {
-        let object = TestObject::at(Vector2Int::new(1, 1));
-        let mut renderer = CrosstermRenderer { output: Vec::new() };
-
-        renderer.render_object(&object).unwrap();
+        renderer.render(&frame).unwrap();
 
         assert_eq!(count_byte(&renderer.output, b'&'), 1);
+        assert_eq!(count_byte(&renderer.output, b'~'), 1);
         assert!(
             renderer
                 .output
@@ -242,47 +152,60 @@ mod tests {
     }
 
     #[test]
-    fn render_object_prints_many_textures_at_their_positions() {
-        let object = TestObject::with_positioned_textures(vec![
-            (Vector2Int::new(1, 1), assets::APPLE),
-            (Vector2Int::new(2, 3), assets::SNAKE_PART),
-        ]);
+    fn filled_cells_use_projected_grid_widths() {
+        let viewport = RenderViewport::new(4, 1);
+        let frame = RenderFrame::new(
+            viewport,
+            vec![
+                filled_render_cell(Vector2Int::new(0, 0), assets::WALL_DIAGONAL),
+                filled_render_cell(Vector2Int::new(1, 0), assets::WALL_Y),
+                filled_render_cell(Vector2Int::new(3, 0), assets::WALL_DIAGONAL),
+            ],
+        );
         let mut renderer = CrosstermRenderer { output: Vec::new() };
 
-        renderer.render_object(&object).unwrap();
+        renderer.render(&frame).unwrap();
 
-        assert_eq!(count_byte(&renderer.output, b'&'), 1);
-        assert_eq!(count_byte(&renderer.output, b'~'), 1);
+        assert_eq!(count_byte(&renderer.output, b'x'), 2);
+        assert_eq!(count_byte(&renderer.output, b'_'), GRID_CELL_WIDTH_COLUMNS);
     }
 
     #[test]
-    fn terminal_columns_follow_rendered_cell_widths() {
+    fn terminal_columns_follow_projected_cell_widths() {
+        let viewport = RenderViewport::new(24, 24);
         let cases = [(0, 0), (1, 1), (22, 43), (23, 45)];
 
         for (grid_x, terminal_column) in cases {
             assert_eq!(
-                CrosstermRenderer::<Vec<u8>>::terminal_column(grid_x).unwrap(),
+                CrosstermRenderer::<Vec<u8>>::terminal_column(grid_x, viewport).unwrap(),
                 terminal_column
             );
         }
     }
 
     #[test]
-    fn render_object_rejects_positions_outside_the_board() {
+    fn render_rejects_positions_outside_the_viewport() {
+        let viewport = RenderViewport::new(24, 24);
         for position in [
             Vector2Int::new(-1, 0),
-            Vector2Int::new(BOARD_SIZE_X as i32, 0),
+            Vector2Int::new(24, 0),
             Vector2Int::new(0, -1),
-            Vector2Int::new(0, BOARD_SIZE_Y as i32),
+            Vector2Int::new(0, 24),
         ] {
+            let frame = RenderFrame::new(
+                viewport,
+                vec![RenderCell::new(position, assets::APPLE, ZIndex::DEFAULT)],
+            );
             let mut renderer = CrosstermRenderer { output: Vec::new() };
 
-            let error = renderer
-                .render_object(&TestObject::at(position))
-                .unwrap_err();
+            let error = renderer.render(&frame).unwrap_err();
 
             assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
         }
+    }
+
+    fn filled_render_cell(position_world: Vector2Int, texture: Texture) -> RenderCell {
+        RenderCell::from_filled_cell(position_world, texture, ZIndex::BACKGROUND)
     }
 
     fn count_byte(bytes: &[u8], expected: u8) -> usize {

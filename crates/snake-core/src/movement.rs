@@ -1,4 +1,4 @@
-use crate::Rotation;
+use crate::{Rotation, Vector2Int};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MoveDirection {
@@ -10,6 +10,23 @@ pub enum MoveDirection {
 
 pub trait Move {
     fn rotate_to(&mut self, direction: MoveDirection);
+}
+
+/// (0,0) is top-left, so down is negative `y`
+pub fn compute_forward_position(
+    position: Vector2Int,
+    rotation: Rotation,
+    magnitude: i32,
+) -> Option<Vector2Int> {
+    let movement_offset = Vector2Int::from(match rotation {
+        Rotation::RIGHT => (magnitude, 0),
+        Rotation::DOWN => (0, magnitude),
+        Rotation::LEFT => (-magnitude, 0),
+        Rotation::UP => (0, -magnitude),
+        _ => return None,
+    });
+
+    Some(position + movement_offset)
 }
 
 /// computes some new rotation by input, or none if no change to it is necessary.
@@ -24,7 +41,28 @@ pub fn compute_new_rotation(direction: MoveDirection, rotation: Rotation) -> Opt
 }
 #[cfg(test)]
 mod tests {
-    use crate::{MoveDirection, Rotation, movement::compute_new_rotation};
+    use crate::{
+        MoveDirection, Rotation, Vector2Int,
+        movement::{compute_forward_position, compute_new_rotation},
+    };
+
+    #[test]
+    fn compute_forward_position_moves_in_the_facing_direction() {
+        let position = Vector2Int::new(10, 10);
+        let cases = [
+            (Rotation::RIGHT, Vector2Int::new(12, 10)),
+            (Rotation::DOWN, Vector2Int::new(10, 12)),
+            (Rotation::LEFT, Vector2Int::new(8, 10)),
+            (Rotation::UP, Vector2Int::new(10, 8)),
+        ];
+
+        for (rotation, expected_position) in cases {
+            assert_eq!(
+                Some(expected_position),
+                compute_forward_position(position, rotation, 2)
+            );
+        }
+    }
 
     #[test]
     fn compute_new_rotation_computes_some() {

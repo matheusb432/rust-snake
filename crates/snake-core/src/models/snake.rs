@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 
 use crate::{
-    GameObject, GameObjectId, Move, MoveDirection, Render, RenderTarget, Rotation, Texture,
-    Transform, Vector2Int, assets, movement::compute_new_rotation,
+    GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
+    Transform, Vector2Int, ZIndex, assets,
+    movement::{compute_forward_position, compute_new_rotation},
 };
 
 /// snake player
@@ -23,26 +24,30 @@ impl Snake {
     }
 
     pub fn tick(&mut self) {
-        // TODO: uncomment
-        // self.move_forward(1);
-        // self.body
-        //     .move_parts_tick(self.head_direction(), self.transform.position);
+        let previous_position = self.transform.position;
+        let head_direction = self.head_direction();
+        self.move_forward(1);
+        let movement_offset = Vector2Int::new(
+            self.transform.position.x - previous_position.x,
+            self.transform.position.y - previous_position.y,
+        );
+        if movement_offset == Vector2Int::default() {
+            return;
+        }
+
+        self.body.move_parts_tick(movement_offset, head_direction);
+    }
+
+    pub fn move_forward(&mut self, magnitude: i32) {
+        if let Some(position) =
+            compute_forward_position(self.transform.position, self.head_direction(), magnitude)
+        {
+            self.transform.position = position;
+        }
     }
 
     pub fn hp(&self) -> u16 {
         self.body.size()
-    }
-
-    // TODO: move to GameObject impl
-    pub fn move_forward(&mut self, magnitude: i32) {
-        let move_i = Vector2Int::from(match self.head_direction() {
-            Rotation::RIGHT => (magnitude, 0),
-            Rotation::DOWN => (0, magnitude),
-            Rotation::LEFT => (-magnitude, 0),
-            Rotation::UP => (0, -magnitude),
-            _ => return,
-        });
-        self.transform.position = self.transform.position + move_i;
     }
 
     pub fn set_position(&mut self, position: Vector2Int) {
@@ -56,8 +61,10 @@ impl Snake {
 }
 
 impl Render for Snake {
-    fn texture(&self) -> RenderTarget {
-        RenderTarget::Many(self.body.parts_textures().collect())
+    fn visit_render_items(&self, visit: &mut dyn FnMut(RenderItem)) {
+        for (position_local, texture) in self.body.parts_textures() {
+            visit(RenderItem::glyph(position_local, texture, ZIndex::DEFAULT));
+        }
     }
 }
 
@@ -119,21 +126,22 @@ impl SnakeBody {
     /// following part.
     pub(in crate::models::snake) fn move_parts_tick(
         &mut self,
-        rotation: Rotation,
-        head_position: Vector2Int,
+        movement_offset: Vector2Int,
+        head_rotation: Rotation,
     ) {
-        let mut next_position = head_position;
-        let mut next_rotation = rotation;
-        if matches!(
-            self.parts.front(),
-            Some(SnakePart { position, rotation, .. })
-                if *position == next_position && *rotation == next_rotation
-        ) {
-            return;
+        for index in (1..self.parts.len()).rev() {
+            let predecessor = self.parts[index - 1].clone();
+            let part = &mut self.parts[index];
+            part.position = Vector2Int::new(
+                predecessor.position.x - movement_offset.x,
+                predecessor.position.y - movement_offset.y,
+            );
+            part.rotation = predecessor.rotation;
         }
-        for current_part in &mut self.parts.iter_mut().rev() {
-            std::mem::swap(&mut current_part.position, &mut next_position);
-            std::mem::swap(&mut current_part.rotation, &mut next_rotation);
+
+        if let Some(head) = self.parts.front_mut() {
+            head.position = Vector2Int::default();
+            head.rotation = head_rotation;
         }
     }
 
@@ -161,7 +169,7 @@ impl SnakeBody {
                 _ => PART,
             };
             SnakePart {
-                position: Vector2Int::default(),
+                position: Vector2Int::new(-(index as i32), 0),
                 rotation: Rotation::default(),
                 texture,
             }
@@ -189,6 +197,7 @@ pub struct SnakePart {
 #[cfg(test)]
 mod tests {
     use super::{Snake, SnakeBody, SnakeError};
+    use crate::{GameObject, Move, MoveDirection, Render, Vector2Int};
 
     #[test]
     fn body_accepts_inclusive_size_bounds() {
@@ -224,5 +233,51 @@ mod tests {
         snake.body = SnakeBody::try_new(body_size).unwrap();
 
         assert_eq!(snake.hp(), body_size);
+    }
+
+    #[test]
+    fn tick_moves_once_and_keeps_body_positions_local_to_the_snake() {
+        let mut snake = Snake::spawn();
+        snake.set_position(Vector2Int::new(10, 10));
+
+        snake.tick();
+
+        assert_eq!(snake.position(), Vector2Int::new(11, 10));
+        assert_eq!(
+            render_positions_local(&snake),
+            [
+                Vector2Int::new(0, 0),
+                Vector2Int::new(-1, 0),
+                Vector2Int::new(-2, 0),
+                Vector2Int::new(-3, 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn tick_preserves_the_body_trail_after_a_turn() {
+        let mut snake = Snake::spawn();
+        snake.set_position(Vector2Int::new(10, 10));
+        snake.tick();
+        snake.rotate_to(MoveDirection::Down);
+
+        snake.tick();
+
+        assert_eq!(snake.position(), Vector2Int::new(11, 11));
+        assert_eq!(
+            render_positions_local(&snake),
+            [
+                Vector2Int::new(0, 0),
+                Vector2Int::new(0, -1),
+                Vector2Int::new(-1, -1),
+                Vector2Int::new(-2, -1),
+            ]
+        );
+    }
+
+    fn render_positions_local(snake: &Snake) -> Vec<Vector2Int> {
+        let mut positions = Vec::new();
+        snake.visit_render_items(&mut |item| positions.push(item.position_local()));
+        positions
     }
 }

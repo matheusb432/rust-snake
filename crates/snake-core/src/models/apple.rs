@@ -1,7 +1,8 @@
 use rand::RngExt;
 
 use crate::{
-    Bounds, GameObject, GameObjectId, Render, RenderTarget, Rotation, Transform, Vector2Int, assets,
+    Bounds, GameObject, GameObjectId, Render, RenderItem, Rotation, Transform, Vector2Int, ZIndex,
+    assets,
 };
 
 pub struct Apple {
@@ -44,8 +45,12 @@ impl GameObject for Apple {
 }
 
 impl Render for Apple {
-    fn texture(&self) -> RenderTarget {
-        RenderTarget::One(assets::APPLE)
+    fn visit_render_items(&self, visit: &mut dyn FnMut(RenderItem)) {
+        visit(RenderItem::glyph(
+            Vector2Int::default(),
+            assets::APPLE,
+            ZIndex::DEFAULT,
+        ));
     }
 }
 
