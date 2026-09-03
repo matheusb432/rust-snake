@@ -94,21 +94,16 @@ fn main() -> Result<ExitCode> {
             // it while still sharing ref with Game
             snake.borrow_mut().eat(&mut apple.borrow_mut());
         }
-        // TODO move tick to after move_forward
-        snake.borrow_mut().tick();
-        apple.borrow_mut().tick(game_playable_bounds);
-        // TODO: test if this an be ==, move this to pure fns
-        if movement_time_accumulated >= MOVEMENT_INTERVAL {
-            movement_time_accumulated -= MOVEMENT_INTERVAL;
-            // TODO: make logic to eat apple
-            // apple.borrow_mut().respawn(game_playable_bounds);
+        if movement_time_accumulated == MOVEMENT_INTERVAL {
+            movement_time_accumulated = Duration::ZERO;
             snake.borrow_mut().move_forward(1);
         }
+        snake.borrow_mut().tick();
+        apple.borrow_mut().tick(game_playable_bounds);
 
-        if frametime_accumulated >= FRAMETIME {
+        if frametime_accumulated == FRAMETIME {
+            frametime_accumulated = Duration::ZERO;
             renderer.render(&game.render_frame())?;
-            // TODO: maybe this should zero it?
-            frametime_accumulated -= FRAMETIME;
         }
     };
 
