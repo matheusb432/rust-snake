@@ -1,11 +1,14 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     collections::{HashMap, VecDeque, hash_map::Entry},
     error::Error,
     fmt,
     rc::Rc,
+    time::Duration,
 };
 
+use anyhow::bail;
 use snake_core::{Bounds, GameObject, GameObjectId, Vector2Int};
 
 use crate::{
@@ -14,6 +17,8 @@ use crate::{
     render::{RenderFrame, RenderViewport, append_render_cells},
 };
 
+const FRAME_INTERVAL: Duration = Duration::from_millis(1000 / 60);
+
 pub(crate) struct Game {
     objects: HashMap<GameObjectId, Rc<RefCell<dyn GameObject>>>,
     object_render_order: Vec<GameObjectId>,
@@ -21,6 +26,7 @@ pub(crate) struct Game {
     playable_bounds: Bounds,
     state: GameState,
     input_queue: InputQueue,
+    frame_time_elapsed: Duration,
 }
 
 impl Game {
@@ -33,8 +39,9 @@ impl Game {
                 start: Vector2Int::new(1, 1),
                 end: Vector2Int::new((BOARD_SIZE_X - 2) as i32, (BOARD_SIZE_Y - 2) as i32),
             },
-            state: GameState::InMainMenu,
+            state: GameState::NotStarted,
             input_queue: InputQueue::new(),
+            frame_time_elapsed: Duration::ZERO,
         }
     }
 
@@ -86,6 +93,48 @@ impl Game {
 
         RenderFrame::new(RenderViewport::new(BOARD_SIZE_X, BOARD_SIZE_Y), cells)
     }
+
+    pub fn render_frame_if_due(&mut self, delta_time: Duration) -> Option<RenderFrame> {
+        self.frame_time_elapsed = self
+            .frame_time_elapsed
+            .saturating_add(delta_time)
+            .min(FRAME_INTERVAL);
+        if self.frame_time_elapsed != FRAME_INTERVAL {
+            return None;
+        }
+
+        self.frame_time_elapsed = Duration::ZERO;
+        Some(self.render_frame())
+    }
+
+    pub fn state(&self) -> GameState {
+        self.state
+    }
+
+    pub fn start(&mut self) -> anyhow::Result<()> {
+        if self.state != GameState::NotStarted {
+            bail!("game already started, it cannot be started")
+        }
+        // TODO: maybe refactor GameState to typestate pattern of Game
+        self.state = GameState::InGame;
+        Ok(())
+    }
+
+    pub fn unpause(&mut self) -> anyhow::Result<()> {
+        if self.state != GameState::Paused {
+            bail!("game is not paused, it cannot be unpaused.")
+        }
+        self.state = GameState::InGame;
+        Ok(())
+    }
+
+    pub fn toggle_pause(&mut self) {
+        self.state = match self.state {
+            GameState::Paused => GameState::InGame,
+            GameState::InGame => GameState::Paused,
+            _ => GameState::Paused,
+        };
+    }
 }
 
 impl Default for Game {
@@ -94,9 +143,9 @@ impl Default for Game {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameState {
-    InMainMenu,
+    NotStarted,
     InGame,
     Paused,
 }

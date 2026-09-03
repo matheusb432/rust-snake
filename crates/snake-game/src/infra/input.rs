@@ -80,10 +80,14 @@ impl InputQueue {
 pub(crate) enum InputKey {
     Move(MoveDirection),
     Quit,
+    Reset,
+    Pause,
 }
 
 impl InputKey {
     pub(crate) const QUIT_CHARACTER: char = 'q';
+    pub(crate) const PAUSE_CHARACTER: char = 'p';
+    pub(crate) const RESET_CHARACTER: char = 'r';
 
     pub fn from_keycode(key_code: KeyCode) -> Option<Self> {
         match key_code {
@@ -92,6 +96,8 @@ impl InputKey {
             KeyCode::Left => Some(Self::Move(MoveDirection::Left)),
             KeyCode::Right => Some(Self::Move(MoveDirection::Right)),
             KeyCode::Char(Self::QUIT_CHARACTER) => Some(Self::Quit),
+            KeyCode::Char(Self::PAUSE_CHARACTER) => Some(Self::Pause),
+            KeyCode::Char(Self::RESET_CHARACTER) => Some(Self::Reset),
             _ => None,
         }
     }

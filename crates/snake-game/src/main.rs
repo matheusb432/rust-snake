@@ -8,12 +8,12 @@ use std::{
 use anyhow::Result;
 use crossterm::event::{self, Event};
 use snake_core::{
-    GameObject, Move,
+    GameObject,
     models::{apple::Apple, snake::Snake},
 };
 
 use crate::{
-    game::Game,
+    game::{Game, GameState},
     infra::{crossterm_renderer::CrosstermRenderer, input::InputKey, terminal::TerminalSession},
     render::Renderer,
 };
@@ -22,16 +22,6 @@ mod board;
 mod game;
 mod infra;
 mod render;
-
-pub const fn pool_from_hz(hz: u64) -> Duration {
-    Duration::from_millis(1000 / hz)
-}
-
-// TODO: make customizable by difficulty ~(o<o)~
-const MOVEMENT_INTERVAL: Duration = pool_from_hz(4);
-
-/// 24 fps glory
-const FRAMETIME: Duration = pool_from_hz(24);
 
 fn main() -> Result<ExitCode> {
     let _terminal = TerminalSession::start()?;
@@ -58,16 +48,10 @@ fn main() -> Result<ExitCode> {
     renderer.render(&game.render_frame())?;
 
     let mut update_time_previous = Instant::now();
-    // TODO: move this to some game state?
-    let mut movement_time_accumulated = Duration::ZERO;
-    let mut frametime_accumulated = Duration::ZERO;
-    // TODO: refactor into read input/ticks and state updates/render fns once stable enough
     let exit_code = 'game: loop {
-        let update_time_current = Instant::now();
-        let delta_time = update_time_current - update_time_previous;
-        update_time_previous = update_time_current;
-        movement_time_accumulated = (movement_time_accumulated + delta_time).min(MOVEMENT_INTERVAL);
-        frametime_accumulated = (frametime_accumulated + delta_time).min(FRAMETIME);
+        let update_time = Instant::now();
+        let delta_time = update_time - update_time_previous;
+        update_time_previous = update_time;
 
         let first_key = match input_rx.try_recv() {
             Ok(key) => Some(key),
@@ -83,27 +67,52 @@ fn main() -> Result<ExitCode> {
         }
 
         for input_key in game.flush_input() {
-            match input_key {
-                InputKey::Move(direction) => snake.borrow_mut().rotate_to(direction),
-                InputKey::Quit => break 'game ExitCode::SUCCESS,
+            // TODO: review if states need to get more elaborate
+            match (input_key, game.state()) {
+                (InputKey::Move(direction), game_state) => {
+                    match game_state {
+                        GameState::NotStarted => game.start()?,
+                        GameState::Paused => game.unpause()?,
+                        GameState::InGame => (),
+                    }
+                    snake.borrow_mut().tick(Duration::ZERO, Some(direction));
+                }
+                (InputKey::Pause, _) => {
+                    game.toggle_pause();
+                }
+                (InputKey::Quit, _) => break 'game ExitCode::SUCCESS,
+                (InputKey::Reset, GameState::InGame) => {
+                    todo!("reset game state and respawn actors")
+                }
+                (InputKey::Reset, _) => {}
             }
         }
-        let is_snake_in_apple = snake.borrow().position() == apple.borrow().position();
-        if is_snake_in_apple {
-            // TODO: using Rc<RefCell<_>> got ugly. see if possible to refactor
-            // it while still sharing ref with Game
-            snake.borrow_mut().eat(&mut apple.borrow_mut());
-        }
-        if movement_time_accumulated == MOVEMENT_INTERVAL {
-            movement_time_accumulated = Duration::ZERO;
-            snake.borrow_mut().move_forward(1);
-        }
-        snake.borrow_mut().tick();
-        apple.borrow_mut().tick(game_playable_bounds);
 
-        if frametime_accumulated == FRAMETIME {
-            frametime_accumulated = Duration::ZERO;
-            renderer.render(&game.render_frame())?;
+        // TODO: move to state update ticks fn
+        if game.state() == GameState::InGame {
+            {
+                let mut snake = snake.borrow_mut();
+                snake.tick(delta_time, None);
+                if snake.part_collides_with_head() {
+                    snake.kill();
+                    println!(
+                        "\r\nGame over! Press '{}' to restart.",
+                        InputKey::RESET_CHARACTER.to_ascii_uppercase()
+                    );
+                }
+            }
+
+            let is_snake_in_apple = snake.borrow().position() == apple.borrow().position();
+            if is_snake_in_apple {
+                // TODO: using Rc<RefCell<_>> got ugly. see if possible to refactor
+                // it while still sharing ref with Game
+                snake.borrow_mut().eat(&mut apple.borrow_mut());
+            }
+            apple.borrow_mut().tick(game_playable_bounds);
+        }
+
+        if let Some(frame) = game.render_frame_if_due(delta_time) {
+            renderer.render(&frame)?;
         }
     };
 

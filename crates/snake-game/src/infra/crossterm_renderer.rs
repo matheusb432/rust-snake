@@ -1,6 +1,6 @@
 use std::io::{Stdout, Write, stdout};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use crossterm::{
     cursor::MoveTo,
     queue,
@@ -29,32 +29,22 @@ impl TerminalPosition {
     fn try_from_render_position(
         position_world: snake_core::Vector2Int,
         viewport: RenderViewport,
-    ) -> Result<Self> {
-        let grid_column = usize::try_from(position_world.x).with_context(|| {
-            format!(
-                "render cell x position {} cannot be represented in the terminal grid",
-                position_world.x
-            )
-        })?;
-        let row = u16::try_from(position_world.y).with_context(|| {
-            format!(
-                "render cell y position {} cannot be represented in the terminal grid",
-                position_world.y
-            )
-        })?;
+    ) -> Result<Option<Self>> {
+        let Ok(grid_column) = usize::try_from(position_world.x) else {
+            return Ok(None);
+        };
+        let Ok(row) = usize::try_from(position_world.y) else {
+            return Ok(None);
+        };
+        if grid_column >= viewport.width_cells() || row >= viewport.height_cells() {
+            return Ok(None);
+        }
 
-        ensure!(
-            grid_column < viewport.width_cells(),
-            "render cell x position {} is outside the viewport",
-            position_world.x
-        );
-        ensure!(
-            usize::from(row) < viewport.height_cells(),
-            "render cell y position {} is outside the viewport",
-            position_world.y
-        );
-
-        Ok(Self::new(Self::project_grid_column(grid_column)?, row))
+        let row = u16::try_from(row).context("render cell row exceeds terminal row capacity")?;
+        Ok(Some(Self::new(
+            Self::project_grid_column(grid_column)?,
+            row,
+        )))
     }
 
     fn project_grid_column(grid_column: usize) -> Result<u16> {
@@ -197,10 +187,12 @@ impl<W: Write> CrosstermRenderer<W> {
     }
 
     fn composite_render_cell(terminal_frame: &mut TerminalFrame, cell: RenderCell) -> Result<()> {
-        let position = TerminalPosition::try_from_render_position(
-            cell.position_world(),
-            terminal_frame.viewport(),
-        )?;
+        let position_world = cell.position_world();
+        let Some(position) =
+            TerminalPosition::try_from_render_position(position_world, terminal_frame.viewport())?
+        else {
+            return Ok(());
+        };
         let cell_index = terminal_frame.cell_index(position);
         let width_columns = if cell.fills_cell() {
             terminal_frame.grid_cell_width_columns(position)
@@ -550,41 +542,36 @@ mod tests {
     }
 
     #[test]
-    fn render_rejects_positions_outside_the_viewport() {
+    fn render_skips_positions_outside_the_viewport() {
         let viewport = RenderViewport::new(24, 24);
-        for (position, error_expected) in [
-            (
+        let frame = RenderFrame::new(
+            viewport,
+            [
                 Vector2Int::new(-1, 0),
-                "render cell x position -1 cannot be represented in the terminal grid",
-            ),
-            (
                 Vector2Int::new(24, 0),
-                "render cell x position 24 is outside the viewport",
-            ),
-            (
                 Vector2Int::new(0, -1),
-                "render cell y position -1 cannot be represented in the terminal grid",
-            ),
-            (
                 Vector2Int::new(0, 24),
-                "render cell y position 24 is outside the viewport",
-            ),
-        ] {
-            let frame = RenderFrame::new(
-                viewport,
-                vec![RenderCell::new(
+                Vector2Int::new(0, 0),
+            ]
+            .into_iter()
+            .map(|position| {
+                RenderCell::new(
                     position,
                     assets::APPLE,
                     Rotation::default(),
                     ZIndex::DEFAULT,
-                )],
-            );
-            let mut renderer = CrosstermRenderer::new(Vec::new());
+                )
+            })
+            .collect(),
+        );
+        let mut renderer = CrosstermRenderer::new(Vec::new());
 
-            let error = renderer.render(&frame).unwrap_err();
+        renderer.render(&frame).unwrap();
 
-            assert_eq!(error.to_string(), error_expected);
-        }
+        assert_eq!(
+            count_texture(&renderer.output, assets::APPLE, Rotation::default()),
+            1
+        );
     }
 
     fn filled_render_cell(
