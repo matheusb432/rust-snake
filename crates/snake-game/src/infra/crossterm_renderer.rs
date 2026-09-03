@@ -156,8 +156,14 @@ mod tests {
 
         renderer.render(&frame).unwrap();
 
-        assert_eq!(count_byte(&renderer.output, b'&'), 1);
-        assert_eq!(count_byte(&renderer.output, b'~'), 1);
+        assert_eq!(
+            count_texture(&renderer.output, assets::APPLE, Rotation::default()),
+            1
+        );
+        assert_eq!(
+            count_texture(&renderer.output, assets::SNAKE_PART, Rotation::default()),
+            1
+        );
         assert!(
             renderer
                 .output
@@ -189,8 +195,14 @@ mod tests {
 
         renderer.render(&frame).unwrap();
 
-        assert_eq!(count_byte(&renderer.output, b'x'), 2);
-        assert_eq!(count_byte(&renderer.output, b'_'), GRID_CELL_WIDTH_COLUMNS);
+        assert_eq!(
+            count_texture(&renderer.output, assets::WALL_DIAGONAL, Rotation::default()),
+            2
+        );
+        assert_eq!(
+            count_texture(&renderer.output, assets::WALL, Rotation::DOWN),
+            GRID_CELL_WIDTH_COLUMNS
+        );
     }
 
     #[test]
@@ -240,7 +252,11 @@ mod tests {
         RenderCell::from_filled_cell(position_world, texture, rotation, ZIndex::BACKGROUND)
     }
 
-    fn count_byte(bytes: &[u8], expected: u8) -> usize {
-        bytes.iter().filter(|byte| **byte == expected).count()
+    fn count_texture(bytes: &[u8], texture: Texture, rotation: Rotation) -> usize {
+        std::str::from_utf8(bytes)
+            .expect("Crossterm test output should be valid UTF-8")
+            .chars()
+            .filter(|character| *character == texture.character(rotation))
+            .count()
     }
 }

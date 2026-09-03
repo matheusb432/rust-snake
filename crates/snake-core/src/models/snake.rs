@@ -2,8 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
-    Transform, Vector2Int, ZIndex, assets,
-    movement::{compute_forward_position, compute_new_rotation},
+    Transform, Vector2Int, ZIndex, assets, movement::compute_move_forward,
 };
 
 /// snake player
@@ -24,26 +23,24 @@ impl Snake {
     }
 
     pub fn tick(&mut self) {
-        let previous_position = self.transform.position;
-        let head_direction = self.head_direction();
-        self.move_forward(1);
-        let movement_offset = Vector2Int::new(
-            self.transform.position.x - previous_position.x,
-            self.transform.position.y - previous_position.y,
-        );
-        if movement_offset == Vector2Int::default() {
-            return;
-        }
-
-        self.body.move_parts_tick(movement_offset, head_direction);
+        self.rotate();
     }
 
     pub fn move_forward(&mut self, magnitude: i32) {
-        if let Some(position) =
-            compute_forward_position(self.transform.position, self.head_direction(), magnitude)
-        {
-            self.transform.position = position;
-        }
+        let position_previous = self.transform.position;
+        let facing_direction = self.transform.rotation.body();
+        let Some(position) =
+            compute_move_forward(self.transform.position, facing_direction, magnitude)
+        else {
+            return;
+        };
+        self.transform.position = position;
+
+        let movement_offset = Vector2Int::new(
+            self.transform.position.x - position_previous.x,
+            self.transform.position.y - position_previous.y,
+        );
+        self.body.move_parts_forward(movement_offset);
     }
 
     pub fn hp(&self) -> u16 {
@@ -56,7 +53,11 @@ impl Snake {
 
     /// direction the snake's head is facing at, dictated by it's rotation
     pub fn head_direction(&self) -> Rotation {
-        self.transform.rotation
+        self.transform.rotation.look()
+    }
+
+    fn rotate(&mut self) {
+        self.transform.rotation.consume_look();
     }
 }
 
@@ -79,7 +80,7 @@ impl GameObject for Snake {
     }
 
     fn rotation(&self) -> Rotation {
-        self.transform.rotation
+        self.transform.rotation.look()
     }
 
     fn id(&self) -> GameObjectId {
@@ -89,11 +90,9 @@ impl GameObject for Snake {
 
 impl Move for Snake {
     fn rotate_to(&mut self, direction: MoveDirection) {
-        if let Some(rotation) = compute_new_rotation(direction, self.transform.rotation) {
-            self.transform.rotation = rotation;
-            if let Some(head) = self.body.parts.front_mut() {
-                head.rotation = rotation;
-            }
+        let look_rotation = self.transform.rotation.look_to(direction);
+        if let Some(head) = self.body.parts.front_mut() {
+            head.rotation = look_rotation;
         }
     }
 }
@@ -132,14 +131,14 @@ impl SnakeBody {
 
     /// moves the front part in the direction, and every other part in the direction of the
     /// following part.
-    pub(in crate::models::snake) fn move_parts_tick(
-        &mut self,
-        movement_offset: Vector2Int,
-        head_rotation: Rotation,
-    ) {
-        for index in (1..self.parts.len()).rev() {
-            let predecessor = self.parts[index - 1].clone();
-            let part = &mut self.parts[index];
+    pub(in crate::models::snake) fn move_parts_forward(&mut self, movement_offset: Vector2Int) {
+        if movement_offset == Vector2Int::ZERO {
+            return;
+        }
+
+        for idx in (1..self.parts.len()).rev() {
+            let predecessor = self.parts[idx - 1].clone();
+            let part = &mut self.parts[idx];
             part.position = Vector2Int::new(
                 predecessor.position.x - movement_offset.x,
                 predecessor.position.y - movement_offset.y,
@@ -149,7 +148,6 @@ impl SnakeBody {
 
         if let Some(head) = self.parts.front_mut() {
             head.position = Vector2Int::default();
-            head.rotation = head_rotation;
         }
     }
 
@@ -207,7 +205,10 @@ pub struct SnakePart {
 #[cfg(test)]
 mod tests {
     use super::{Snake, SnakeBody, SnakeError};
-    use crate::{GameObject, Move, MoveDirection, Render, Vector2Int};
+    use crate::{
+        GameObject, Move, MoveDirection, Rotation, Texture, Vector2Int, assets,
+        test_utils::collect_render_items,
+    };
 
     #[test]
     fn body_accepts_inclusive_size_bounds() {
@@ -246,11 +247,11 @@ mod tests {
     }
 
     #[test]
-    fn tick_moves_once_and_keeps_body_positions_local_to_the_snake() {
+    fn move_forward_moves_once_and_keeps_body_positions_local_to_the_snake() {
         let mut snake = Snake::spawn();
         snake.set_position(Vector2Int::new(10, 10));
 
-        snake.tick();
+        snake.move_forward(1);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 10));
         assert_eq!(
@@ -265,13 +266,14 @@ mod tests {
     }
 
     #[test]
-    fn tick_preserves_the_body_trail_after_a_turn() {
+    fn move_forward_preserves_the_body_trail_after_a_turn() {
         let mut snake = Snake::spawn();
         snake.set_position(Vector2Int::new(10, 10));
-        snake.tick();
+        snake.move_forward(1);
         snake.rotate_to(MoveDirection::Down);
-
         snake.tick();
+
+        snake.move_forward(1);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 11));
         assert_eq!(
@@ -283,20 +285,92 @@ mod tests {
                 Vector2Int::new(-2, -1),
             ]
         );
-        assert_eq!(render_characters(&snake), ['v', '~', '~', '~']);
+        assert_eq!(
+            render_textures(&snake),
+            [
+                assets::SNAKE_HEAD,
+                assets::SNAKE_PART,
+                assets::SNAKE_PART,
+                assets::SNAKE_PART,
+            ]
+        );
+        assert_head_looks(&snake, Rotation::DOWN);
+    }
+
+    #[test]
+    fn latest_valid_look_replaces_the_next_movement() {
+        let mut snake = Snake::spawn();
+        snake.set_position(Vector2Int::new(10, 10));
+
+        snake.rotate_to(MoveDirection::Up);
+        assert_head_looks(&snake, Rotation::UP);
+
+        snake.rotate_to(MoveDirection::Left);
+        assert_head_looks(&snake, Rotation::UP);
+
+        snake.rotate_to(MoveDirection::Down);
+        assert_head_looks(&snake, Rotation::DOWN);
+        snake.tick();
+
+        snake.move_forward(1);
+
+        assert_eq!(snake.position(), Vector2Int::new(10, 11));
+        assert_head_looks(&snake, Rotation::DOWN);
+    }
+
+    #[test]
+    fn looking_in_the_body_direction_cancels_the_next_turn() {
+        let mut snake = Snake::spawn();
+        snake.set_position(Vector2Int::new(10, 10));
+        snake.rotate_to(MoveDirection::Up);
+
+        snake.rotate_to(MoveDirection::Right);
+        snake.tick();
+        snake.move_forward(1);
+
+        assert_eq!(snake.position(), Vector2Int::new(11, 10));
+        assert_head_looks(&snake, Rotation::RIGHT);
+    }
+
+    #[test]
+    fn tick_consumes_the_look_for_subsequent_validation() {
+        let mut snake = Snake::spawn();
+        snake.set_position(Vector2Int::new(10, 10));
+        snake.rotate_to(MoveDirection::Down);
+
+        snake.tick();
+        snake.move_forward(1);
+        snake.rotate_to(MoveDirection::Left);
+        snake.tick();
+        snake.move_forward(1);
+
+        assert_eq!(snake.position(), Vector2Int::new(9, 11));
     }
 
     fn render_positions_local(snake: &Snake) -> Vec<Vector2Int> {
-        let mut positions = Vec::new();
-        snake.visit_render_items(&mut |item| positions.push(item.position_local()));
-        positions
+        collect_render_items(snake)
+            .into_iter()
+            .map(|item| item.position_local())
+            .collect()
     }
 
-    fn render_characters(snake: &Snake) -> Vec<char> {
-        let mut characters = Vec::new();
-        snake.visit_render_items(&mut |item| {
-            characters.push(item.texture().character(item.rotation()));
-        });
-        characters
+    fn render_textures(snake: &Snake) -> Vec<Texture> {
+        collect_render_items(snake)
+            .into_iter()
+            .map(|item| item.texture())
+            .collect()
+    }
+
+    #[track_caller]
+    fn assert_head_looks(snake: &Snake, expected_rotation: Rotation) {
+        let head = collect_render_items(snake)
+            .into_iter()
+            .next()
+            .expect("a snake should render a head");
+
+        assert_eq!(
+            (head.texture(), head.rotation()),
+            (assets::SNAKE_HEAD, expected_rotation)
+        );
     }
 }

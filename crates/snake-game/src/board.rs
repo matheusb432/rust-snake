@@ -95,7 +95,7 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::assets;
+    use snake_core::{Rotation, assets};
 
     use super::{BOARD_SIZE_X, BOARD_SIZE_Y, Board, create_default_board};
 
@@ -129,8 +129,8 @@ mod tests {
         assert!(board[1..x_max].iter().all(|col| col[0] == assets::WALL));
         assert!(board[1..x_max].iter().all(|col| col[y_max] == assets::WALL));
 
-        assert_eq!(board[0][1].character(Board::rotation_at(0, 1)), '|');
-        assert_eq!(board[1][0].character(Board::rotation_at(1, 0)), '_');
+        assert_eq!(Board::rotation_at(0, 1), Rotation::RIGHT);
+        assert_eq!(Board::rotation_at(1, 0), Rotation::DOWN);
 
         assert!(board[1..x_max].iter().all(|col| {
             col[1..y_max]

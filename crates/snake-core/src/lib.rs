@@ -4,6 +4,9 @@ pub mod models;
 pub mod movement;
 pub mod render;
 
+#[cfg(test)]
+pub(crate) mod test_utils;
+
 use std::ops::Add;
 
 pub use game_object::{GameObject, GameObjectId};
@@ -13,7 +16,40 @@ pub use render::{Render, RenderItem, Texture, TextureColor, ZIndex};
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Transform {
     pub position: Vector2Int,
-    pub rotation: Rotation,
+    pub rotation: TransformRotation,
+}
+
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct TransformRotation {
+    body: Rotation,
+    look: Option<Rotation>,
+}
+
+impl TransformRotation {
+    pub(crate) const fn body(self) -> Rotation {
+        self.body
+    }
+
+    pub fn look(self) -> Rotation {
+        self.look.unwrap_or(self.body)
+    }
+
+    pub fn look_to(&mut self, direction: MoveDirection) -> Rotation {
+        let requested_rotation = Rotation::from(direction);
+
+        if requested_rotation == self.body {
+            self.look = None;
+        } else if let Some(rotation) = movement::compute_new_rotation(direction, self.body) {
+            self.look = Some(rotation);
+        }
+
+        self.look()
+    }
+
+    pub fn consume_look(&mut self) -> Rotation {
+        self.body = self.look.take().unwrap_or(self.body);
+        self.body
+    }
 }
 
 #[derive(Default, Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -23,6 +59,8 @@ pub struct Vector2Int {
 }
 
 impl Vector2Int {
+    pub const ZERO: Self = Vector2Int { x: 0, y: 0 };
+
     pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }

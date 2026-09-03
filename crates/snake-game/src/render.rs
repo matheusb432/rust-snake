@@ -135,14 +135,18 @@ mod tests {
 
     use super::{RenderCell, RenderFrame, RenderViewport};
 
+    const BACKGROUND_TEXTURE: Texture = Texture::new('b', TextureColor::White);
+    const FIRST_DEFAULT_TEXTURE: Texture = Texture::new('h', TextureColor::White);
+    const SECOND_DEFAULT_TEXTURE: Texture = Texture::new('s', TextureColor::White);
+
     #[test]
     fn frame_orders_cells_by_z_index_and_preserves_equal_order() {
         let frame = RenderFrame::new(
             RenderViewport::new(24, 24),
             vec![
-                render_cell('h', ZIndex::DEFAULT),
-                render_cell('b', ZIndex::BACKGROUND),
-                render_cell('s', ZIndex::DEFAULT),
+                render_cell(FIRST_DEFAULT_TEXTURE, ZIndex::DEFAULT),
+                render_cell(BACKGROUND_TEXTURE, ZIndex::BACKGROUND),
+                render_cell(SECOND_DEFAULT_TEXTURE, ZIndex::DEFAULT),
             ],
         );
 
@@ -150,18 +154,17 @@ mod tests {
             frame
                 .cells()
                 .iter()
-                .map(|cell| cell.texture().character(cell.rotation()))
+                .map(|cell| cell.texture())
                 .collect::<Vec<_>>(),
-            ['b', 'h', 's']
+            [
+                BACKGROUND_TEXTURE,
+                FIRST_DEFAULT_TEXTURE,
+                SECOND_DEFAULT_TEXTURE
+            ]
         );
     }
 
-    fn render_cell(character: char, z_index: ZIndex) -> RenderCell {
-        RenderCell::new(
-            Vector2Int::default(),
-            Texture::new(character, TextureColor::White),
-            Rotation::default(),
-            z_index,
-        )
+    fn render_cell(texture: Texture, z_index: ZIndex) -> RenderCell {
+        RenderCell::new(Vector2Int::default(), texture, Rotation::default(), z_index)
     }
 }

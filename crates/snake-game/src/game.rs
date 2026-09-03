@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, VecDeque, hash_map::Entry},
     error::Error,
     fmt,
     rc::Rc,
@@ -10,6 +10,7 @@ use snake_core::{Bounds, GameObject, GameObjectId, Vector2Int};
 
 use crate::{
     board::{BOARD_SIZE_X, BOARD_SIZE_Y, Board},
+    infra::input::{InputKey, InputQueue},
     render::{RenderFrame, RenderViewport, append_render_cells},
 };
 
@@ -18,6 +19,8 @@ pub(crate) struct Game {
     object_render_order: Vec<GameObjectId>,
     board: Board,
     playable_bounds: Bounds,
+    state: GameState,
+    input_queue: InputQueue,
 }
 
 impl Game {
@@ -30,6 +33,8 @@ impl Game {
                 start: Vector2Int::new(1, 1),
                 end: Vector2Int::new((BOARD_SIZE_X - 2) as i32, (BOARD_SIZE_Y - 2) as i32),
             },
+            state: GameState::InMainMenu,
+            input_queue: InputQueue::new(),
         }
     }
 
@@ -53,11 +58,24 @@ impl Game {
         self.playable_bounds
     }
 
+    pub fn queue_input(&mut self, input_key: Option<InputKey>) {
+        let Some(input_key) = input_key else {
+            return;
+        };
+
+        self.input_queue.push_back(input_key);
+    }
+
+    pub fn flush_input(&mut self) -> VecDeque<InputKey> {
+        self.input_queue.flush()
+    }
+
     pub fn render_frame(&self) -> RenderFrame {
         let mut cells = Vec::new();
         append_render_cells(&mut cells, Vector2Int::default(), &self.board);
 
         for id in &self.object_render_order {
+            // TODO: refactor to just use hashmap?
             let object = self
                 .objects
                 .get(id)
@@ -74,6 +92,13 @@ impl Default for Game {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum GameState {
+    InMainMenu,
+    InGame,
+    Paused,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -97,10 +122,11 @@ impl Error for InsertObjectError {}
 mod tests {
     use snake_core::{
         GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
-        TextureColor, Vector2Int, ZIndex, models::snake::Snake,
+        TextureColor, Vector2Int, ZIndex, assets, models::snake::Snake,
     };
 
     use super::{Game, InsertObjectError};
+    use crate::infra::input::InputKey;
 
     struct Foo {
         id: GameObjectId,
@@ -108,6 +134,8 @@ mod tests {
     }
 
     impl Foo {
+        const TEXTURE: Texture = Texture::new('f', TextureColor::White);
+
         fn at(position: Vector2Int) -> Self {
             Self {
                 id: GameObjectId::new(),
@@ -120,7 +148,7 @@ mod tests {
         fn visit_render_items(&self, visit: &mut dyn FnMut(RenderItem)) {
             visit(RenderItem::glyph(
                 Vector2Int::default(),
-                Texture::new('f', TextureColor::White),
+                Self::TEXTURE,
                 Rotation::default(),
                 ZIndex::DEFAULT,
             ));
@@ -152,8 +180,7 @@ mod tests {
 
         assert!(
             game.render_frame().cells().iter().any(|cell| {
-                cell.position_world() == updated_position
-                    && cell.texture().character(cell.rotation()) == 'f'
+                cell.position_world() == updated_position && cell.texture() == Foo::TEXTURE
             }),
             "the stored object should reflect mutations through its returned handle"
         );
@@ -171,8 +198,7 @@ mod tests {
                 .cells()
                 .iter()
                 .filter(|cell| {
-                    cell.position_world() == position
-                        && cell.texture().character(cell.rotation()) == 'f'
+                    cell.position_world() == position && cell.texture() == Foo::TEXTURE
                 })
                 .count(),
             2
@@ -208,9 +234,9 @@ mod tests {
                 .cells()
                 .iter()
                 .filter(|cell| cell.position_world() == position)
-                .map(|cell| cell.texture().character(cell.rotation()))
+                .map(|cell| cell.texture())
                 .collect::<Vec<_>>(),
-            [' ', 'f']
+            [assets::BLANK, Foo::TEXTURE]
         );
     }
 
@@ -226,22 +252,17 @@ mod tests {
         let snake_cells = frame
             .cells()
             .iter()
-            .filter(|cell| matches!(cell.texture().character(cell.rotation()), 'v' | '~'))
-            .map(|cell| {
-                (
-                    cell.position_world(),
-                    cell.texture().character(cell.rotation()),
-                )
-            })
+            .filter(|cell| matches!(cell.texture(), assets::SNAKE_HEAD | assets::SNAKE_PART))
+            .map(|cell| (cell.position_world(), cell.texture(), cell.rotation()))
             .collect::<Vec<_>>();
 
         assert_eq!(
             snake_cells,
             [
-                (Vector2Int::new(10, 10), 'v'),
-                (Vector2Int::new(9, 10), '~'),
-                (Vector2Int::new(8, 10), '~'),
-                (Vector2Int::new(7, 10), '~'),
+                (Vector2Int::new(10, 10), assets::SNAKE_HEAD, Rotation::DOWN),
+                (Vector2Int::new(9, 10), assets::SNAKE_PART, Rotation::RIGHT),
+                (Vector2Int::new(8, 10), assets::SNAKE_PART, Rotation::RIGHT),
+                (Vector2Int::new(7, 10), assets::SNAKE_PART, Rotation::RIGHT),
             ]
         );
     }
@@ -252,5 +273,19 @@ mod tests {
 
         assert_eq!(bounds.start, Vector2Int::new(1, 1));
         assert_eq!(bounds.end, Vector2Int::new(22, 22));
+    }
+
+    #[test]
+    fn queues_input_until_it_is_flushed() {
+        let mut game = Game::new();
+        game.queue_input(Some(InputKey::Move(MoveDirection::Up)));
+        game.queue_input(None);
+        game.queue_input(Some(InputKey::Quit));
+
+        assert_eq!(
+            game.flush_input().into_iter().collect::<Vec<_>>(),
+            [InputKey::Move(MoveDirection::Up), InputKey::Quit]
+        );
+        assert!(game.flush_input().is_empty());
     }
 }

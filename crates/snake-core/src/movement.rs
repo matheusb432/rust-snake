@@ -13,7 +13,7 @@ pub trait Move {
 }
 
 /// (0,0) is top-left, so down is negative `y`
-pub fn compute_forward_position(
+pub fn compute_move_forward(
     position: Vector2Int,
     rotation: Rotation,
     magnitude: i32,
@@ -43,11 +43,11 @@ pub fn compute_new_rotation(direction: MoveDirection, rotation: Rotation) -> Opt
 mod tests {
     use crate::{
         MoveDirection, Rotation, Vector2Int,
-        movement::{compute_forward_position, compute_new_rotation},
+        movement::{compute_move_forward, compute_new_rotation},
     };
 
     #[test]
-    fn compute_forward_position_moves_in_the_facing_direction() {
+    fn compute_move_forward_moves_in_the_facing_direction() {
         let position = Vector2Int::new(10, 10);
         let cases = [
             (Rotation::RIGHT, Vector2Int::new(12, 10)),
@@ -59,7 +59,7 @@ mod tests {
         for (rotation, expected_position) in cases {
             assert_eq!(
                 Some(expected_position),
-                compute_forward_position(position, rotation, 2)
+                compute_move_forward(position, rotation, 2)
             );
         }
     }

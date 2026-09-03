@@ -32,7 +32,7 @@ impl Apple {
 }
 impl GameObject for Apple {
     fn rotation(&self) -> Rotation {
-        self.transform.rotation
+        self.transform.rotation.look()
     }
 
     fn id(&self) -> GameObjectId {
@@ -49,7 +49,7 @@ impl Render for Apple {
         visit(RenderItem::glyph(
             Vector2Int::default(),
             assets::APPLE,
-            self.transform.rotation,
+            self.transform.rotation.look(),
             ZIndex::DEFAULT,
         ));
     }
