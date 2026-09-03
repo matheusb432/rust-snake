@@ -171,13 +171,12 @@ impl SnakeBody {
 
     /// pushes a new part at the tail position
     pub fn add_part(&mut self) {
-        let Some(tail) = self.parts.back_mut() else {
-            self.parts.push_back(SnakePart::default_tail());
+        let Some(part_last) = self.parts.back() else {
+            self.parts.push_back(SnakePart::default_part());
             return;
         };
-        let new_tail = tail.clone();
-        tail.texture = assets::SNAKE_PART;
-        self.parts.push_back(new_tail);
+        let part_new = part_last.clone();
+        self.parts.push_back(part_new);
     }
 
     // TODO refactor
@@ -195,11 +194,9 @@ impl SnakeBody {
         let capacity = usize::from(Self::MAX_SIZE);
         let mut parts = VecDeque::with_capacity(capacity);
 
-        let parts_last_index = usize::from(size) - 1;
         parts.extend((0..usize::from(size)).map(|index| {
             let texture = match index {
                 0 => SnakePart::HEAD,
-                index if index == parts_last_index => SnakePart::TAIL,
                 _ => SnakePart::PART,
             };
             SnakePart {
@@ -231,13 +228,11 @@ pub struct SnakePart {
 impl SnakePart {
     pub const HEAD: Texture = assets::SNAKE_HEAD;
     pub const PART: Texture = assets::SNAKE_PART;
-    // TODO: add tail texture
-    pub const TAIL: Texture = assets::SNAKE_PART;
-    pub const fn default_tail() -> Self {
+    pub const fn default_part() -> Self {
         Self {
             position: Vector2Int::ZERO,
             rotation: Rotation::RIGHT,
-            texture: Self::TAIL,
+            texture: Self::PART,
         }
     }
 }

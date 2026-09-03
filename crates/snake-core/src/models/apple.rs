@@ -50,8 +50,8 @@ impl Apple {
 
         // TODO: make it never overlap with snake's position
         self.transform.position = Vector2Int::new(
-            rng.random_range(start.x..=end.x),
-            rng.random_range(start.y..=end.y),
+            rng.random_range(start.x..end.x),
+            rng.random_range(start.y..end.y),
         );
         self.eaten = false;
     }
@@ -92,16 +92,18 @@ mod tests {
     use crate::{Bounds, GameObject, Vector2Int};
 
     #[test]
-    fn spawn_accepts_each_inclusive_bound() {
-        for position in [Vector2Int::new(1, 1), Vector2Int::new(22, 22)] {
-            let bounds = Bounds {
-                start: position,
-                end: position,
-            };
+    fn respawn_excludes_the_end_bound() {
+        let position_expected = Vector2Int::new(1, 1);
+        let bounds = Bounds {
+            start: position_expected,
+            end: Vector2Int::new(2, 2),
+        };
+        let mut apple = Apple::spawn(bounds);
 
-            let apple = Apple::spawn(bounds);
+        for _ in 0..64 {
+            apple.respawn(bounds);
 
-            assert_eq!(apple.position(), position);
+            assert_eq!(apple.position(), position_expected);
         }
     }
 }
