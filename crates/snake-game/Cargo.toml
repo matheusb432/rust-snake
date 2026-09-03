@@ -6,9 +6,9 @@ default-run = "snake"
 
 [dependencies]
 snake-core.workspace = true
+anyhow.workspace = true
 crossterm.workspace = true
 
 [[bin]]
 name = "snake"
 path = "src/main.rs"
-

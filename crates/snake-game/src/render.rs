@@ -1,5 +1,4 @@
-use std::io;
-
+use anyhow::Result;
 use snake_core::{Render, RenderItem, Rotation, Texture, Vector2Int, ZIndex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,7 +125,7 @@ pub(crate) fn append_render_cells(
 }
 
 pub(crate) trait Renderer {
-    fn render(&mut self, frame: &RenderFrame) -> io::Result<()>;
+    fn render(&mut self, frame: &RenderFrame) -> Result<()>;
 }
 
 #[cfg(test)]

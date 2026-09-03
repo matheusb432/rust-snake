@@ -2,7 +2,9 @@ use std::collections::VecDeque;
 
 use crate::{
     GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
-    Transform, Vector2Int, ZIndex, assets, movement::compute_move_forward,
+    Transform, Vector2Int, ZIndex, assets,
+    models::apple::{Apple, AppleEatenOk},
+    movement::compute_move_forward,
 };
 
 /// snake player
@@ -47,6 +49,10 @@ impl Snake {
         self.body.size()
     }
 
+    pub fn add_part(&mut self) {
+        self.body.add_part();
+    }
+
     pub fn set_position(&mut self, position: Vector2Int) {
         self.transform.position = position;
     }
@@ -54,6 +60,18 @@ impl Snake {
     /// direction the snake's head is facing at, dictated by it's rotation
     pub fn head_direction(&self) -> Rotation {
         self.transform.rotation.look()
+    }
+
+    /// eats apple and grows or no-ops if apple already eaten
+    pub fn eat(&mut self, apple: &mut Apple) {
+        match apple.be_eaten() {
+            AppleEatenOk::AlreadyEaten => {
+                dbg!("apple already eaten");
+            }
+            AppleEatenOk::Eaten => {
+                self.add_part();
+            }
+        }
     }
 
     fn rotate(&mut self) {
@@ -151,6 +169,18 @@ impl SnakeBody {
         }
     }
 
+    /// pushes a new part at the tail position
+    pub fn add_part(&mut self) {
+        let Some(tail) = self.parts.back_mut() else {
+            self.parts.push_back(SnakePart::default_tail());
+            return;
+        };
+        let new_tail = tail.clone();
+        tail.texture = assets::SNAKE_PART;
+        self.parts.push_back(new_tail);
+    }
+
+    // TODO refactor
     fn size(&self) -> u16 {
         u16::try_from(self.parts.len()).expect("snake body size cannot exceed its u16 maximum")
     }
@@ -164,17 +194,13 @@ impl SnakeBody {
     fn from_valid_size(size: u16) -> Self {
         let capacity = usize::from(Self::MAX_SIZE);
         let mut parts = VecDeque::with_capacity(capacity);
-        const HEAD: Texture = assets::SNAKE_HEAD;
-        const PART: Texture = assets::SNAKE_PART;
-        // TODO: add tail texture
-        const TAIL: Texture = assets::SNAKE_PART;
 
         let parts_last_index = usize::from(size) - 1;
         parts.extend((0..usize::from(size)).map(|index| {
             let texture = match index {
-                0 => HEAD,
-                index if index == parts_last_index => TAIL,
-                _ => PART,
+                0 => SnakePart::HEAD,
+                index if index == parts_last_index => SnakePart::TAIL,
+                _ => SnakePart::PART,
             };
             SnakePart {
                 position: Vector2Int::new(-(index as i32), 0),
@@ -200,6 +226,20 @@ pub struct SnakePart {
     /// direction the part is facing
     rotation: Rotation,
     texture: Texture,
+}
+
+impl SnakePart {
+    pub const HEAD: Texture = assets::SNAKE_HEAD;
+    pub const PART: Texture = assets::SNAKE_PART;
+    // TODO: add tail texture
+    pub const TAIL: Texture = assets::SNAKE_PART;
+    pub const fn default_tail() -> Self {
+        Self {
+            position: Vector2Int::ZERO,
+            rotation: Rotation::RIGHT,
+            texture: Self::TAIL,
+        }
+    }
 }
 
 #[cfg(test)]

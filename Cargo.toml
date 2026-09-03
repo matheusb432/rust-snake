@@ -7,6 +7,7 @@ members = ["crates/snake-core","crates/snake-game"]
 # Internal crates.
 snake-core = { path = "crates/snake-core" }
 # Core deps
+anyhow = "1.0.104"
 uuid = { version = "1.26.0", features = ["v4"] }
 rand = { version = "0.10.2", default-features = false, features = ["thread_rng"] }
 

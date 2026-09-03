@@ -8,15 +8,39 @@ use crate::{
 pub struct Apple {
     id: GameObjectId,
     transform: Transform,
+    eaten: bool,
 }
 impl Apple {
     pub fn spawn(position_bounds: Bounds) -> Self {
         let mut apple = Self {
             id: GameObjectId::new(),
             transform: Transform::default(),
+            eaten: false,
         };
         apple.respawn(position_bounds);
         apple
+    }
+
+    pub fn be_eaten(&mut self) -> AppleEatenOk {
+        match self.eaten {
+            true => AppleEatenOk::AlreadyEaten,
+            false => {
+                self.eaten = true;
+                AppleEatenOk::Eaten
+            }
+        }
+    }
+
+    pub fn eaten(&self) -> bool {
+        self.eaten
+    }
+
+    // TODO: think of cleaner way to set bounds than to require every fn to have it (maybe a
+    // Rc<T> of game coordinate data that GameObjects can own?)
+    pub fn tick(&mut self, position_bounds: Bounds) {
+        if self.eaten {
+            self.respawn(position_bounds);
+        }
     }
 
     pub fn respawn(&mut self, position_bounds: Bounds) {
@@ -24,11 +48,18 @@ impl Apple {
         let mut rng = rand::rng();
         let Bounds { start, end } = position_bounds;
 
+        // TODO: make it never overlap with snake's position
         self.transform.position = Vector2Int::new(
             rng.random_range(start.x..=end.x),
             rng.random_range(start.y..=end.y),
         );
+        self.eaten = false;
     }
+}
+
+pub enum AppleEatenOk {
+    Eaten,
+    AlreadyEaten,
 }
 impl GameObject for Apple {
     fn rotation(&self) -> Rotation {
