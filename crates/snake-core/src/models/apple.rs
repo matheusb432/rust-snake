@@ -26,6 +26,7 @@ impl Apple {
             true => AppleEatenOk::AlreadyEaten,
             false => {
                 self.eaten = true;
+                // TODO: emit Signal::AppleEaten after Apple owns a SignalEmitter.
                 AppleEatenOk::Eaten
             }
         }

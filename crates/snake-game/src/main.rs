@@ -95,6 +95,7 @@ fn main() -> Result<ExitCode> {
                 snake.tick(delta_time, None);
                 if snake.part_collides_with_head() {
                     snake.kill();
+                    // TODO: emit Signal::GameOver through the game's SignalEmitter.
                     println!(
                         "\r\nGame over! Press '{}' to restart.",
                         InputKey::RESET_CHARACTER.to_ascii_uppercase()

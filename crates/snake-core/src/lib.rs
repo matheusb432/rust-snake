@@ -3,6 +3,7 @@ pub mod game_object;
 pub mod models;
 pub mod movement;
 pub mod render;
+pub mod signal;
 
 #[cfg(test)]
 pub(crate) mod test_utils;
