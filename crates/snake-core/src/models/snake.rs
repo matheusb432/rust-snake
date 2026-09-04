@@ -5,6 +5,7 @@ use crate::{
     Transform, Vector2Int, ZIndex, assets,
     models::apple::{Apple, AppleEatenOk},
     movement::compute_move_forward,
+    signal::{Signal, SignalEmitter},
 };
 
 const MOVEMENT_INTERVAL: Duration = Duration::from_millis(100);
@@ -16,48 +17,24 @@ pub struct Snake {
     body: SnakeBody,
     transform: Transform,
     lifecycle: SnakeLifecycle,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Alive {
-    movement_interval: Duration,
-    movement_time_elapsed: Duration,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Dead {
-    movement_interval: Duration,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SnakeState<State> {
-    state: State,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SnakeLifecycle {
-    Alive(SnakeState<Alive>),
-    Dead(SnakeState<Dead>),
+    emitter: SignalEmitter,
 }
 
 impl Snake {
-    pub fn spawn() -> Self {
+    pub fn spawn(emitter: SignalEmitter) -> Self {
         Self {
             id: GameObjectId::new(),
             body: SnakeBody::default(),
             transform: Transform::default(),
-            lifecycle: SnakeLifecycle::Alive(SnakeState::alive(MOVEMENT_INTERVAL)),
+            lifecycle: SnakeLifecycle::SPAWNED,
+            emitter,
         }
     }
 
     pub fn respawn(&mut self, transform: Transform) {
-        let SnakeLifecycle::Dead(state) = self.lifecycle else {
-            return;
-        };
-
         self.body = SnakeBody::default();
         self.transform = transform;
-        self.lifecycle = SnakeLifecycle::Alive(state.respawn());
+        self.lifecycle = SnakeLifecycle::SPAWNED;
     }
 
     pub fn kill(&mut self) {
@@ -65,6 +42,7 @@ impl Snake {
             SnakeLifecycle::Alive(state) => SnakeLifecycle::Dead(state.kill()),
             dead @ SnakeLifecycle::Dead(_) => dead,
         };
+        self.emitter.emit(Signal::SnakeKilled { snake_id: self.id });
     }
 
     pub fn tick(&mut self, delta_time: Duration, movement_direction: Option<MoveDirection>) {
@@ -78,6 +56,10 @@ impl Snake {
             delta_time,
             movement_direction,
         );
+
+        if self.part_collides_with_head() {
+            self.kill();
+        }
     }
 
     pub fn hp(&self) -> u16 {
@@ -131,6 +113,30 @@ impl Snake {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Alive {
+    movement_interval: Duration,
+    movement_time_elapsed: Duration,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Dead {
+    movement_interval: Duration,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SnakeState<State> {
+    state: State,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SnakeLifecycle {
+    Alive(SnakeState<Alive>),
+    Dead(SnakeState<Dead>),
+}
+impl SnakeLifecycle {
+    pub const SPAWNED: SnakeLifecycle = SnakeLifecycle::Alive(SnakeState::alive(MOVEMENT_INTERVAL));
+}
 impl SnakeState<Alive> {
     const fn alive(movement_interval: Duration) -> Self {
         Self {
@@ -371,7 +377,7 @@ mod tests {
     use super::{MOVEMENT_INTERVAL, Snake, SnakeBody, SnakeError};
     use crate::{
         GameObject, Move, MoveDirection, Rotation, Texture, Vector2Int, assets,
-        test_utils::collect_render_items,
+        test_utils::{collect_render_items, spawn_snake},
     };
 
     #[test]
@@ -403,7 +409,7 @@ mod tests {
 
     #[test]
     fn hp_is_derived_from_body_size() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         let body_size = SnakeBody::MIN_SIZE + 3;
         snake.body = SnakeBody::try_new(body_size).unwrap();
 
@@ -412,7 +418,7 @@ mod tests {
 
     #[test]
     fn move_forward_moves_once_and_keeps_body_positions_local_to_the_snake() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
 
         snake.tick(MOVEMENT_INTERVAL, None);
@@ -431,7 +437,7 @@ mod tests {
 
     #[test]
     fn moving_resets_the_movement_interval() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         let position = Vector2Int::new(10, 10);
         let one_millisecond = Duration::from_millis(1);
         let almost_one_interval = MOVEMENT_INTERVAL - one_millisecond;
@@ -450,7 +456,7 @@ mod tests {
 
     #[test]
     fn killed_snake_does_not_move() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         let position = Vector2Int::new(10, 10);
         snake.set_position(position);
         snake.kill();
@@ -462,7 +468,7 @@ mod tests {
 
     #[test]
     fn move_forward_preserves_the_body_trail_after_a_turn() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
         snake.tick(MOVEMENT_INTERVAL, None);
         snake.rotate_to(MoveDirection::Down);
@@ -494,7 +500,7 @@ mod tests {
 
     #[test]
     fn latest_valid_look_replaces_the_next_movement() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
 
         snake.rotate_to(MoveDirection::Up);
@@ -515,7 +521,7 @@ mod tests {
 
     #[test]
     fn looking_in_the_body_direction_cancels_the_next_turn() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
         snake.rotate_to(MoveDirection::Up);
 
@@ -529,7 +535,7 @@ mod tests {
 
     #[test]
     fn tick_consumes_the_look_for_subsequent_validation() {
-        let mut snake = Snake::spawn();
+        let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
         snake.rotate_to(MoveDirection::Down);
 

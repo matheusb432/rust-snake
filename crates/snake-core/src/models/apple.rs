@@ -3,19 +3,22 @@ use rand::RngExt;
 use crate::{
     Bounds, GameObject, GameObjectId, Render, RenderItem, Rotation, Transform, Vector2Int, ZIndex,
     assets,
+    signal::{Signal, SignalEmitter},
 };
 
 pub struct Apple {
     id: GameObjectId,
     transform: Transform,
     eaten: bool,
+    emitter: SignalEmitter,
 }
 impl Apple {
-    pub fn spawn(position_bounds: Bounds) -> Self {
+    pub fn spawn(position_bounds: Bounds, emitter: SignalEmitter) -> Self {
         let mut apple = Self {
             id: GameObjectId::new(),
             transform: Transform::default(),
             eaten: false,
+            emitter,
         };
         apple.respawn(position_bounds);
         apple
@@ -26,7 +29,7 @@ impl Apple {
             true => AppleEatenOk::AlreadyEaten,
             false => {
                 self.eaten = true;
-                // TODO: emit Signal::AppleEaten after Apple owns a SignalEmitter.
+                self.emitter.emit(Signal::AppleEaten { apple_id: self.id });
                 AppleEatenOk::Eaten
             }
         }
@@ -90,7 +93,12 @@ impl Render for Apple {
 #[cfg(test)]
 mod tests {
     use super::Apple;
-    use crate::{Bounds, GameObject, Vector2Int};
+    use crate::{Bounds, GameObject, Vector2Int, signal::SignalBus};
+
+    fn spawn_apple(bounds: Bounds) -> Apple {
+        let emitter = SignalBus::new().emitter();
+        Apple::spawn(bounds, emitter)
+    }
 
     #[test]
     fn respawn_excludes_the_end_bound() {
@@ -99,7 +107,7 @@ mod tests {
             start: position_expected,
             end: Vector2Int::new(2, 2),
         };
-        let mut apple = Apple::spawn(bounds);
+        let mut apple = spawn_apple(bounds);
 
         for _ in 0..64 {
             apple.respawn(bounds);

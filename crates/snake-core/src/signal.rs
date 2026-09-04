@@ -2,16 +2,20 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use crate::GameObjectId;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Signal {
     AppleEaten { apple_id: GameObjectId },
+    SnakeKilled { snake_id: GameObjectId },
+    // TODO: investigate if possible to restrict who can emit what event (maybe using TypeId,
+    // and making game objects own their own events?)
     GamePauseChanged { is_paused: bool },
     GameOver,
+    GameReset,
 }
 
 type SignalSubscriber = Box<dyn FnMut(&Signal)>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SignalEmitter {
     signals_pending: Rc<RefCell<VecDeque<Signal>>>,
 }

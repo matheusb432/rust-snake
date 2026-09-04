@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     cell::RefCell,
     collections::{HashMap, VecDeque, hash_map::Entry},
     error::Error,
@@ -9,7 +8,10 @@ use std::{
 };
 
 use anyhow::bail;
-use snake_core::{Bounds, GameObject, GameObjectId, Vector2Int};
+use snake_core::{
+    Bounds, GameObject, GameObjectId, Vector2Int,
+    signal::{Signal, SignalBus, SignalEmitter},
+};
 
 use crate::{
     board::{BOARD_SIZE_X, BOARD_SIZE_Y, Board},
@@ -27,10 +29,11 @@ pub(crate) struct Game {
     state: GameState,
     input_queue: InputQueue,
     frame_time_elapsed: Duration,
+    emitter: SignalEmitter,
 }
 
 impl Game {
-    pub fn new() -> Self {
+    pub fn new(emitter: SignalEmitter) -> Self {
         Self {
             objects: HashMap::new(),
             object_render_order: Vec::new(),
@@ -42,6 +45,7 @@ impl Game {
             state: GameState::NotStarted,
             input_queue: InputQueue::new(),
             frame_time_elapsed: Duration::ZERO,
+            emitter,
         }
     }
 
@@ -113,11 +117,16 @@ impl Game {
 
     pub fn start(&mut self) -> anyhow::Result<()> {
         if self.state != GameState::NotStarted {
-            bail!("game already started, it cannot be started")
+            bail!("game already started, it cannot be started.")
         }
         // TODO: maybe refactor GameState to typestate pattern of Game
         self.state = GameState::InGame;
         Ok(())
+    }
+
+    pub fn to_game_over(&mut self) {
+        self.state = GameState::GameOver;
+        self.emitter.emit(Signal::GameOver);
     }
 
     pub fn unpause(&mut self) -> anyhow::Result<()> {
@@ -135,11 +144,10 @@ impl Game {
             _ => GameState::Paused,
         };
     }
-}
-
-impl Default for Game {
-    fn default() -> Self {
-        Self::new()
+    pub fn reset(&mut self) {
+        self.state = GameState::NotStarted;
+        // TODO: listen to event in main
+        self.emitter.emit(Signal::GameReset);
     }
 }
 
@@ -148,6 +156,7 @@ pub enum GameState {
     NotStarted,
     InGame,
     Paused,
+    GameOver,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -171,7 +180,7 @@ impl Error for InsertObjectError {}
 mod tests {
     use snake_core::{
         GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
-        TextureColor, Vector2Int, ZIndex, assets, models::snake::Snake,
+        TextureColor, Vector2Int, ZIndex, assets, models::snake::Snake, signal::SignalBus,
     };
 
     use super::{Game, InsertObjectError};
@@ -218,9 +227,19 @@ mod tests {
         }
     }
 
+    fn new_game() -> Game {
+        Game::new(SignalBus::new().emitter())
+    }
+    // TODO: create shared test_utils
+
+    pub(crate) fn spawn_snake() -> Snake {
+        let emitter = SignalBus::new().emitter();
+        Snake::spawn(emitter)
+    }
+
     #[test]
     fn inserts_an_object_and_returns_its_handle() {
-        let mut game = Game::new();
+        let mut game = new_game();
         let foo = Foo::at(Vector2Int::new(4, 7));
         let updated_position = Vector2Int::new(8, 9);
 
@@ -237,7 +256,7 @@ mod tests {
 
     #[test]
     fn inserts_objects_at_the_same_position() {
-        let mut game = Game::new();
+        let mut game = new_game();
         let position = Vector2Int::new(24, 7);
 
         assert!(game.insert_object(Foo::at(position)).is_ok());
@@ -256,7 +275,7 @@ mod tests {
 
     #[test]
     fn rejects_an_object_with_a_duplicate_id() {
-        let mut game = Game::new();
+        let mut game = new_game();
         let id = GameObjectId::new();
         let position = Vector2Int::new(4, 7);
 
@@ -272,7 +291,7 @@ mod tests {
 
     #[test]
     fn render_frame_places_objects_above_the_board_at_world_positions() {
-        let mut game = Game::new();
+        let mut game = new_game();
         let position = Vector2Int::new(4, 7);
         game.insert_object(Foo::at(position)).unwrap();
 
@@ -291,8 +310,8 @@ mod tests {
 
     #[test]
     fn render_frame_resolves_rotated_snake_parts_relative_to_the_snake() {
-        let mut game = Game::new();
-        let mut snake = Snake::spawn();
+        let mut game = new_game();
+        let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
         snake.rotate_to(MoveDirection::Down);
         game.insert_object(snake).unwrap();
@@ -318,7 +337,7 @@ mod tests {
 
     #[test]
     fn playable_bounds_exclude_the_board_walls() {
-        let bounds = Game::new().playable_bounds();
+        let bounds = new_game().playable_bounds();
 
         assert_eq!(bounds.start, Vector2Int::new(1, 1));
         assert_eq!(bounds.end, Vector2Int::new(22, 22));
@@ -326,7 +345,7 @@ mod tests {
 
     #[test]
     fn queues_input_until_it_is_flushed() {
-        let mut game = Game::new();
+        let mut game = new_game();
         game.queue_input(Some(InputKey::Move(MoveDirection::Up)));
         game.queue_input(None);
         game.queue_input(Some(InputKey::Quit));
