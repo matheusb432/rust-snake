@@ -5,23 +5,28 @@ use rodio::{
     Decoder, DeviceSinkBuilder, DeviceSinkError, MixerDeviceSink, Source, decoder::DecoderError,
 };
 
-// TODO map enum to play sounds, use a nicer path definition
-static SOUND: &[u8] = include_bytes!("../../../../assets/coin.wav");
-
 pub(crate) struct RodioAudioClient {
     output: MixerDeviceSink,
+    pub volume: Volume,
 }
 
 impl RodioAudioClient {
     pub(crate) fn new() -> Result<Self, DeviceSinkError> {
-        let output = DeviceSinkBuilder::open_default_sink()?;
+        let mut output = DeviceSinkBuilder::open_default_sink()?;
 
-        Ok(Self { output })
+        output.log_on_drop(false);
+
+        Ok(Self {
+            output,
+            volume: Volume::HALF,
+        })
     }
 
-    pub(crate) fn play_sound(&self, volume: Volume) -> Result<(), DecoderError> {
-        let source = Decoder::try_from(Cursor::new(SOUND))?;
-        self.output.mixer().add(source.amplify(volume.into_inner()));
+    pub(crate) fn play_sound(&self, sound: Sound) -> Result<(), DecoderError> {
+        let source = Decoder::try_from(Cursor::new(sound.into_asset()))?;
+        self.output
+            .mixer()
+            .add(source.amplify(self.volume.into_inner()));
 
         Ok(())
     }
@@ -42,6 +47,7 @@ impl Volume {
         } else if value > Self::MAX {
             bail!("volume too high, max is {}", Self::MAX)
         }
+
         Ok(Self(value))
     }
 
@@ -49,3 +55,16 @@ impl Volume {
         self.0
     }
 }
+
+pub enum Sound {
+    Coin,
+}
+impl Sound {
+    pub(crate) fn into_asset(self) -> &'static [u8] {
+        match self {
+            Self::Coin => SOUND,
+        }
+    }
+}
+
+static SOUND: &[u8] = include_bytes!("../../../../assets/coin.wav");

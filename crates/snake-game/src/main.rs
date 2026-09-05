@@ -6,7 +6,10 @@ use snake_core::signal::SignalBusBuilder;
 
 use crate::{
     game::{Game, GameSignal, GameUpdate},
-    infra::{crossterm_renderer::CrosstermRenderer, input::InputKey, terminal::TerminalSession},
+    infra::{
+        audio::RodioAudioClient, crossterm_renderer::CrosstermRenderer, input::InputKey,
+        terminal::TerminalSession,
+    },
     render::Renderer,
     scene::register_snake_scene,
 };
@@ -17,10 +20,14 @@ mod infra;
 mod render;
 mod scene;
 
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod test_utils;
+
 fn main() -> Result<ExitCode> {
     let _terminal = TerminalSession::start()?;
     let mut signals = SignalBusBuilder::new();
-    let mut game = Game::new(signals.register::<GameSignal>()?);
+    let mut game = Game::new(signals.register::<GameSignal>()?, RodioAudioClient::new()?);
 
     register_snake_scene(&mut game, &mut signals)?;
 

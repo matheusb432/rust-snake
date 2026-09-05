@@ -27,10 +27,12 @@ pub struct TransformRotation {
 }
 
 impl TransformRotation {
-    pub(crate) const fn body(self) -> Rotation {
+    #[must_use]
+    pub const fn body(self) -> Rotation {
         self.body
     }
 
+    #[must_use]
     pub fn look(self) -> Rotation {
         self.look.unwrap_or(self.body)
     }
@@ -97,14 +99,6 @@ impl Bounds {
     pub fn middle(&self) -> Vector2Int {
         self.start.midpoint(self.end)
     }
-}
-
-// TODO: implement vec floating point calcs
-/// vector 2 for game coords
-#[derive(Default, Debug, PartialEq, Clone, Copy)]
-pub struct Vector2 {
-    pub x: f32,
-    pub y: f32,
 }
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]

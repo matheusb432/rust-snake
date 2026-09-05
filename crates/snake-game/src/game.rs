@@ -15,7 +15,10 @@ use snake_core::{
 
 use crate::{
     board::{BOARD_SIZE_X, BOARD_SIZE_Y, Board},
-    infra::input::{InputKey, InputQueue},
+    infra::{
+        audio::{RodioAudioClient, Sound},
+        input::{InputKey, InputQueue},
+    },
     render::{RenderFrame, RenderViewport, append_render_cells},
 };
 
@@ -39,12 +42,13 @@ pub(crate) struct Game {
     playable_bounds: Bounds,
     state: GameState,
     input_queue: InputQueue,
+    audio_client: RodioAudioClient,
     frame_time_elapsed: Duration,
     emitter: SignalEmitter<GameSignal>,
 }
 
 impl Game {
-    pub fn new(emitter: SignalEmitter<GameSignal>) -> Self {
+    pub fn new(emitter: SignalEmitter<GameSignal>, audio_client: RodioAudioClient) -> Self {
         Self {
             objects: HashMap::new(),
             object_render_order: Vec::new(),
@@ -57,6 +61,7 @@ impl Game {
             },
             state: GameState::NotStarted,
             input_queue: InputQueue::new(),
+            audio_client,
             frame_time_elapsed: Duration::ZERO,
             emitter,
         }
@@ -138,7 +143,6 @@ impl Game {
         append_render_cells(&mut cells, Vector2Int::default(), &self.board);
 
         for id in &self.object_render_order {
-            // TODO: refactor to just use hashmap?
             let object = self
                 .objects
                 .get(id)
@@ -232,6 +236,15 @@ impl Game {
 
         Ok(GameUpdate::Continue)
     }
+
+    pub fn play_sound(&self, sound: Sound) {
+        match self.audio_client.play_sound(sound) {
+            Ok(_) => {}
+            Err(e) => {
+                todo!("handle sound err: {e}")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -275,7 +288,7 @@ mod tests {
     };
 
     use super::{Game, GameSignal, InsertObjectError};
-    use crate::infra::input::InputKey;
+    use crate::{infra::input::InputKey, test_utils::new_game};
 
     struct Foo {
         id: GameObjectId,
@@ -318,16 +331,10 @@ mod tests {
         }
     }
 
-    fn new_game() -> Game {
-        let mut signals = SignalBusBuilder::<Game>::new();
-        Game::new(signals.register::<GameSignal>().unwrap())
-    }
-    // TODO: create shared test_utils
-
     #[test]
     fn emits_game_signal_variants_through_one_emitter() {
         let mut signals = SignalBusBuilder::<Game>::new();
-        let mut game = Game::new(signals.register::<GameSignal>().unwrap());
+        let mut game = new_game(&mut signals);
         let received = Rc::new(RefCell::new(Vec::new()));
         signals.on::<GameSignal>({
             let received = received.clone();
@@ -355,7 +362,7 @@ mod tests {
 
     #[test]
     fn renders_mutations_through_an_inserted_object_handle() {
-        let mut game = new_game();
+        let mut game = new_game(&mut SignalBusBuilder::<Game>::new());
         let foo = Rc::new(RefCell::new(Foo::at(Vector2Int::new(4, 7))));
         let updated_position = Vector2Int::new(8, 9);
 
@@ -372,7 +379,7 @@ mod tests {
 
     #[test]
     fn inserts_objects_at_the_same_position() {
-        let mut game = new_game();
+        let mut game = new_game(&mut SignalBusBuilder::<Game>::new());
         let position = Vector2Int::new(24, 7);
 
         assert!(
@@ -397,7 +404,7 @@ mod tests {
 
     #[test]
     fn rejects_an_object_with_a_duplicate_id() {
-        let mut game = new_game();
+        let mut game = new_game(&mut SignalBusBuilder::<Game>::new());
         let id = GameObjectId::new();
         let position = Vector2Int::new(4, 7);
 
@@ -414,7 +421,7 @@ mod tests {
 
     #[test]
     fn render_frame_places_objects_above_the_board_at_world_positions() {
-        let mut game = new_game();
+        let mut game = new_game(&mut SignalBusBuilder::<Game>::new());
         let position = Vector2Int::new(4, 7);
         game.insert_object(Rc::new(RefCell::new(Foo::at(position))))
             .unwrap();
@@ -437,7 +444,7 @@ mod tests {
 
     #[test]
     fn playable_bounds_exclude_the_board_walls() {
-        let bounds = new_game().playable_bounds;
+        let bounds = new_game(&mut SignalBusBuilder::<Game>::new()).playable_bounds;
 
         assert_eq!(bounds.start, Vector2Int::new(1, 1));
         assert_eq!(bounds.end, Vector2Int::new(22, 22));
@@ -445,7 +452,7 @@ mod tests {
 
     #[test]
     fn queues_input_until_it_is_flushed() {
-        let mut game = new_game();
+        let mut game = new_game(&mut SignalBusBuilder::<Game>::new());
         game.queue_input(Some(InputKey::Move(MoveDirection::Up)));
         game.queue_input(None);
         game.queue_input(Some(InputKey::Quit));

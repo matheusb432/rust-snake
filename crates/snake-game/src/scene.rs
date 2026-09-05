@@ -12,7 +12,7 @@ use snake_core::{
 
 use crate::{
     game::{Game, GameSignal},
-    infra::input::InputKey,
+    infra::{audio::Sound, input::InputKey},
 };
 
 /// registers and manages snake scene state.
@@ -51,9 +51,7 @@ fn register_snake_objects(
         let snake = snake_reference.clone();
         move |input| {
             if let (InputKey::Move(direction), Some(snake)) = (input, snake.upgrade()) {
-                // TODO: try to make it not be necessary to tick?
                 snake.borrow_mut().move_in_direction(direction);
-                // snake.borrow_mut().tick(Duration::ZERO, Some(direction));
             }
         }
     });
@@ -80,13 +78,13 @@ fn register_snake_objects(
     });
     signals.on::<AppleSignal>({
         let snake = snake_reference.clone();
-        move |signal, _| match signal {
+        move |signal, game| match signal {
             AppleSignal::Eaten { apple_id: eaten_id } => {
                 if *eaten_id == apple_id
                     && let Some(snake) = snake.upgrade()
                 {
                     snake.borrow_mut().add_part();
-                    // TODO: play audio of coin.wva here
+                    game.play_sound(Sound::Coin);
                 }
             }
         }
@@ -125,7 +123,9 @@ fn register_snake_objects(
                 //     InputKey::RESET_CHARACTER.to_ascii_uppercase()
                 // );
             }
-            GameSignal::PauseChanged { .. } => {}
+            GameSignal::PauseChanged { is_paused: _ } => {
+                // TODO: render (or disable) pause text
+            }
         }
         Ok(())
     })?;
@@ -151,8 +151,9 @@ mod tests {
 
     use super::{register_snake_objects, register_snake_scene};
     use crate::{
-        game::{Game, GameSignal, GameState},
+        game::{Game, GameState},
         infra::input::InputKey,
+        test_utils::new_game,
     };
 
     struct TestScene {
@@ -165,7 +166,7 @@ mod tests {
 
     fn new_scene() -> TestScene {
         let mut signals = SignalBusBuilder::new();
-        let mut game = Game::new(signals.register::<GameSignal>().unwrap());
+        let mut game = new_game(&mut signals);
         let snake = Rc::new(RefCell::new(Snake::spawn(
             signals.register::<SnakeSignal>().unwrap(),
         )));
@@ -217,7 +218,7 @@ mod tests {
     #[test]
     fn registered_scene_handles_movement_pause_and_resume() {
         let mut signals = SignalBusBuilder::new();
-        let mut game = Game::new(signals.register::<GameSignal>().unwrap());
+        let mut game = new_game(&mut signals);
         register_snake_scene(&mut game, &mut signals).unwrap();
         let mut signals = signals.build();
         let head_position = |game: &Game| {
