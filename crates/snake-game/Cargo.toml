@@ -8,6 +8,7 @@ default-run = "snake"
 snake-core.workspace = true
 anyhow.workspace = true
 crossterm.workspace = true
+rodio.workspace = true
 
 [[bin]]
 name = "snake"

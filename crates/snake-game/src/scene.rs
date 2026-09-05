@@ -86,6 +86,7 @@ fn register_snake_objects(
                     && let Some(snake) = snake.upgrade()
                 {
                     snake.borrow_mut().add_part();
+                    // TODO: play audio of coin.wva here
                 }
             }
         }

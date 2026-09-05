@@ -1,0 +1,26 @@
+min_version = "2026.8.8"
+
+[settings]
+auto_install = false
+lockfile = true
+locked = true
+
+[bootstrap.packages]
+"apt:libasound2-dev" = "latest"
+"apt:pkg-config" = "latest"
+
+[tools]
+rust = { version = "stable", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+] }
+just = "1.56.0"
+"cargo-binstall" = "1.21.1"
+"cargo:cargo-nextest" = { version = "0.9.143", depends = [
+  "rust",
+  "cargo-binstall",
+] }
+
+[tasks.bootstrap]
+description = "Fetch workspace dependencies"
+run = "just setup"
