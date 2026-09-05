@@ -2,13 +2,15 @@ use std::{collections::VecDeque, time::Duration};
 
 use crate::{
     GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
-    Transform, Vector2Int, ZIndex, assets,
-    models::apple::{Apple, AppleEatenOk},
-    movement::compute_move_forward,
-    signal::{Signal, SignalEmitter},
+    Transform, Vector2Int, ZIndex, assets, movement::compute_move_forward, signal::SignalEmitter,
 };
 
 const MOVEMENT_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnakeSignal {
+    Killed { snake_id: GameObjectId },
+}
 
 /// snake player
 #[derive(Debug)]
@@ -17,11 +19,11 @@ pub struct Snake {
     body: SnakeBody,
     transform: Transform,
     lifecycle: SnakeLifecycle,
-    emitter: SignalEmitter,
+    emitter: SignalEmitter<SnakeSignal>,
 }
 
 impl Snake {
-    pub fn spawn(emitter: SignalEmitter) -> Self {
+    pub fn spawn(emitter: SignalEmitter<SnakeSignal>) -> Self {
         Self {
             id: GameObjectId::new(),
             body: SnakeBody::default(),
@@ -38,24 +40,25 @@ impl Snake {
     }
 
     pub fn kill(&mut self) {
+        let mut did_kill = false;
         self.lifecycle = match self.lifecycle {
-            SnakeLifecycle::Alive(state) => SnakeLifecycle::Dead(state.kill()),
+            SnakeLifecycle::Alive(state) => {
+                did_kill = true;
+                SnakeLifecycle::Dead(state.kill())
+            }
             dead @ SnakeLifecycle::Dead(_) => dead,
         };
-        self.emitter.emit(Signal::SnakeKilled { snake_id: self.id });
+        if did_kill {
+            self.emitter.emit(SnakeSignal::Killed { snake_id: self.id });
+        }
     }
 
-    pub fn tick(&mut self, delta_time: Duration, movement_direction: Option<MoveDirection>) {
+    pub fn tick(&mut self, delta_time: Duration) {
         let SnakeLifecycle::Alive(state) = &mut self.lifecycle else {
             return;
         };
 
-        state.tick(
-            &mut self.body,
-            &mut self.transform,
-            delta_time,
-            movement_direction,
-        );
+        state.tick(&mut self.body, &mut self.transform, delta_time);
 
         if self.part_collides_with_head() {
             self.kill();
@@ -96,20 +99,19 @@ impl Snake {
             .any(|p| p.position == Vector2Int::ZERO)
     }
 
-    /// eats apple and grows or no-ops if apple already eaten
-    pub fn eat(&mut self, apple: &mut Apple) {
-        if !matches!(self.lifecycle, SnakeLifecycle::Alive(_)) {
-            return;
-        }
+    pub fn is_alive(&self) -> bool {
+        matches!(self.lifecycle, SnakeLifecycle::Alive(_))
+    }
 
-        match apple.be_eaten() {
-            AppleEatenOk::AlreadyEaten => {
-                dbg!("apple already eaten");
-            }
-            AppleEatenOk::Eaten => {
-                self.add_part();
-            }
-        }
+    pub fn move_in_direction(&mut self, direction: MoveDirection) {
+        let SnakeLifecycle::Alive(mut state) = self.lifecycle else {
+            return;
+        };
+
+        self.rotate_to(direction);
+        self.transform.rotation.consume_look();
+        state.move_forward(&mut self.body, &mut self.transform, 1);
+        self.lifecycle = SnakeLifecycle::Alive(state);
     }
 }
 
@@ -147,34 +149,22 @@ impl SnakeState<Alive> {
         }
     }
 
-    fn tick(
-        &mut self,
-        body: &mut SnakeBody,
-        transform: &mut Transform,
-        delta_time: Duration,
-        movement_direction: Option<MoveDirection>,
-    ) {
+    fn tick(&mut self, body: &mut SnakeBody, transform: &mut Transform, delta_time: Duration) {
         self.state.movement_time_elapsed = self
             .state
             .movement_time_elapsed
             .saturating_add(delta_time)
             .min(self.state.movement_interval);
-        let movement_interval_elapsed =
+        let did_movement_interval_elapse =
             self.state.movement_time_elapsed == self.state.movement_interval;
-        let movement_requested = movement_direction.is_some();
-
-        if let Some(direction) = movement_direction {
-            Self::rotate_to(body, transform, direction);
-        }
-        transform.rotation.consume_look();
-        if movement_requested || movement_interval_elapsed {
+        if did_movement_interval_elapse {
             self.move_forward(body, transform, 1);
         }
     }
 
     fn move_forward(&mut self, body: &mut SnakeBody, transform: &mut Transform, magnitude: i32) {
         let position_previous = transform.position;
-        let facing_direction = transform.rotation.body();
+        let facing_direction = transform.rotation.consume_look();
         let Some(position) = compute_move_forward(transform.position, facing_direction, magnitude)
         else {
             return;
@@ -421,7 +411,7 @@ mod tests {
         let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
 
-        snake.tick(MOVEMENT_INTERVAL, None);
+        snake.tick(MOVEMENT_INTERVAL);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 10));
         assert_eq!(
@@ -436,20 +426,20 @@ mod tests {
     }
 
     #[test]
-    fn moving_resets_the_movement_interval() {
+    fn input_movement_does_reset_the_tick_interval() {
         let mut snake = spawn_snake();
         let position = Vector2Int::new(10, 10);
         let one_millisecond = Duration::from_millis(1);
         let almost_one_interval = MOVEMENT_INTERVAL - one_millisecond;
         snake.set_position(position);
 
-        snake.tick(almost_one_interval, None);
-        snake.tick(Duration::ZERO, Some(MoveDirection::Right));
-        snake.tick(one_millisecond, None);
+        snake.tick(almost_one_interval);
+        snake.move_in_direction(MoveDirection::Right);
+        snake.tick(one_millisecond);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 10));
 
-        snake.tick(almost_one_interval, None);
+        snake.tick(almost_one_interval);
 
         assert_eq!(snake.position(), Vector2Int::new(12, 10));
     }
@@ -461,7 +451,8 @@ mod tests {
         snake.set_position(position);
         snake.kill();
 
-        snake.tick(MOVEMENT_INTERVAL, Some(MoveDirection::Down));
+        snake.move_in_direction(MoveDirection::Down);
+        snake.tick(MOVEMENT_INTERVAL);
 
         assert_eq!(snake.position(), position);
     }
@@ -470,11 +461,8 @@ mod tests {
     fn move_forward_preserves_the_body_trail_after_a_turn() {
         let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
-        snake.tick(MOVEMENT_INTERVAL, None);
-        snake.rotate_to(MoveDirection::Down);
-        snake.tick(Duration::ZERO, None);
-
-        snake.tick(MOVEMENT_INTERVAL, None);
+        snake.tick(MOVEMENT_INTERVAL);
+        snake.move_in_direction(MoveDirection::Down);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 11));
         assert_eq!(
@@ -511,9 +499,7 @@ mod tests {
 
         snake.rotate_to(MoveDirection::Down);
         assert_head_looks(&snake, Rotation::DOWN);
-        snake.tick(Duration::ZERO, None);
-
-        snake.tick(MOVEMENT_INTERVAL, None);
+        snake.tick(MOVEMENT_INTERVAL);
 
         assert_eq!(snake.position(), Vector2Int::new(10, 11));
         assert_head_looks(&snake, Rotation::DOWN);
@@ -526,8 +512,7 @@ mod tests {
         snake.rotate_to(MoveDirection::Up);
 
         snake.rotate_to(MoveDirection::Right);
-        snake.tick(Duration::ZERO, None);
-        snake.tick(MOVEMENT_INTERVAL, None);
+        snake.tick(MOVEMENT_INTERVAL);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 10));
         assert_head_looks(&snake, Rotation::RIGHT);
@@ -539,11 +524,9 @@ mod tests {
         snake.set_position(Vector2Int::new(10, 10));
         snake.rotate_to(MoveDirection::Down);
 
-        snake.tick(Duration::ZERO, None);
-        snake.tick(MOVEMENT_INTERVAL, None);
+        snake.tick(MOVEMENT_INTERVAL);
         snake.rotate_to(MoveDirection::Left);
-        snake.tick(Duration::ZERO, None);
-        snake.tick(MOVEMENT_INTERVAL, None);
+        snake.tick(MOVEMENT_INTERVAL);
 
         assert_eq!(snake.position(), Vector2Int::new(9, 11));
     }

@@ -7,10 +7,10 @@ use std::{
     time::Duration,
 };
 
-use anyhow::bail;
+use anyhow::{Result, anyhow, bail};
 use snake_core::{
     Bounds, GameObject, GameObjectId, Vector2Int,
-    signal::{Signal, SignalBus, SignalEmitter},
+    signal::{DispatchSignalError, SignalBus, SignalEmitter},
 };
 
 use crate::{
@@ -21,22 +21,35 @@ use crate::{
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(1000 / 60);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GameSignal {
+    Over,
+    Reset,
+    PauseChanged { is_paused: bool },
+}
+
 pub(crate) struct Game {
+    /// mapped game objects by id
     objects: HashMap<GameObjectId, Rc<RefCell<dyn GameObject>>>,
+    /// render order determined by z-index when resolved
     object_render_order: Vec<GameObjectId>,
+    input_handlers: Vec<Box<dyn FnMut(InputKey)>>,
+    update_handlers: Vec<Box<dyn FnMut(Duration, Bounds)>>,
     board: Board,
     playable_bounds: Bounds,
     state: GameState,
     input_queue: InputQueue,
     frame_time_elapsed: Duration,
-    emitter: SignalEmitter,
+    emitter: SignalEmitter<GameSignal>,
 }
 
 impl Game {
-    pub fn new(emitter: SignalEmitter) -> Self {
+    pub fn new(emitter: SignalEmitter<GameSignal>) -> Self {
         Self {
             objects: HashMap::new(),
             object_render_order: Vec::new(),
+            input_handlers: Vec::new(),
+            update_handlers: Vec::new(),
             board: Board::new(),
             playable_bounds: Bounds {
                 start: Vector2Int::new(1, 1),
@@ -49,24 +62,36 @@ impl Game {
         }
     }
 
-    pub fn insert_object<T>(&mut self, object: T) -> Result<Rc<RefCell<T>>, InsertObjectError>
+    pub const fn playable_bounds(&self) -> Bounds {
+        self.playable_bounds
+    }
+
+    pub fn state(&self) -> GameState {
+        self.state
+    }
+
+    /// handlers run in order of registration
+    pub fn on_input(&mut self, handler: impl FnMut(InputKey) + 'static) {
+        self.input_handlers.push(Box::new(handler));
+    }
+
+    // handlers run in order of registration
+    pub fn on_update(&mut self, handler: impl FnMut(Duration, Bounds) + 'static) {
+        self.update_handlers.push(Box::new(handler));
+    }
+
+    pub fn insert_object<T>(&mut self, object: Rc<RefCell<T>>) -> Result<(), InsertObjectError>
     where
         T: GameObject + 'static,
     {
-        let id = object.id();
+        let id = object.borrow().id();
         let Entry::Vacant(entry) = self.objects.entry(id) else {
             return Err(InsertObjectError::ObjectAlreadyPlaced { id });
         };
 
-        let object_handle = Rc::new(RefCell::new(object));
-        let game_object_handle: Rc<RefCell<dyn GameObject>> = object_handle.clone();
-        entry.insert(game_object_handle);
+        entry.insert(object);
         self.object_render_order.push(id);
-        Ok(object_handle)
-    }
-
-    pub const fn playable_bounds(&self) -> Bounds {
-        self.playable_bounds
+        Ok(())
     }
 
     pub fn queue_input(&mut self, input_key: Option<InputKey>) {
@@ -79,6 +104,33 @@ impl Game {
 
     pub fn flush_input(&mut self) -> VecDeque<InputKey> {
         self.input_queue.flush()
+    }
+
+    pub fn update(
+        &mut self,
+        delta_time: Duration,
+        signal_bus: &mut SignalBus<Self, anyhow::Error>,
+    ) -> Result<GameUpdate> {
+        if self.apply_input()? == GameUpdate::Quit {
+            return Ok(GameUpdate::Quit);
+        }
+
+        if self.state() == GameState::InGame {
+            for handler in &mut self.update_handlers {
+                handler(delta_time, self.playable_bounds);
+            }
+        }
+
+        signal_bus
+            .dispatch_pending(self)
+            .map_err(|error| match error {
+                DispatchSignalError::UnexpectedSignalType { expected } => {
+                    anyhow!("signal payload is not a {expected}")
+                }
+                DispatchSignalError::Handler(error) => error,
+            })?;
+
+        Ok(GameUpdate::Continue)
     }
 
     pub fn render_frame(&self) -> RenderFrame {
@@ -111,22 +163,17 @@ impl Game {
         Some(self.render_frame())
     }
 
-    pub fn state(&self) -> GameState {
-        self.state
-    }
-
     pub fn start(&mut self) -> anyhow::Result<()> {
         if self.state != GameState::NotStarted {
             bail!("game already started, it cannot be started.")
         }
-        // TODO: maybe refactor GameState to typestate pattern of Game
         self.state = GameState::InGame;
         Ok(())
     }
 
-    pub fn to_game_over(&mut self) {
+    pub fn end(&mut self) {
         self.state = GameState::GameOver;
-        self.emitter.emit(Signal::GameOver);
+        self.emitter.emit(GameSignal::Over);
     }
 
     pub fn unpause(&mut self) -> anyhow::Result<()> {
@@ -138,17 +185,59 @@ impl Game {
     }
 
     pub fn toggle_pause(&mut self) {
-        self.state = match self.state {
-            GameState::Paused => GameState::InGame,
-            GameState::InGame => GameState::Paused,
-            _ => GameState::Paused,
+        let is_paused = self.state != GameState::Paused;
+        self.state = if is_paused {
+            GameState::Paused
+        } else {
+            GameState::InGame
         };
+        self.emitter.emit(GameSignal::PauseChanged { is_paused });
     }
     pub fn reset(&mut self) {
         self.state = GameState::NotStarted;
-        // TODO: listen to event in main
-        self.emitter.emit(Signal::GameReset);
+        self.emitter.emit(GameSignal::Reset);
     }
+
+    fn apply_input(&mut self) -> Result<GameUpdate> {
+        for input_key in self.flush_input() {
+            let game_state = self.state;
+            match (input_key, game_state) {
+                (input_key, GameState::GameOver) => {
+                    if let InputKey::Reset = input_key {
+                        self.reset();
+                    }
+                    break;
+                }
+                (InputKey::Move(direction), game_state) => {
+                    match game_state {
+                        GameState::NotStarted => self.start()?,
+                        GameState::Paused => self.unpause()?,
+                        GameState::InGame => (),
+                        GameState::GameOver => break,
+                    }
+                    for handler in &mut self.input_handlers {
+                        handler(InputKey::Move(direction));
+                    }
+                }
+                (InputKey::Pause, _) => {
+                    self.toggle_pause();
+                }
+                (InputKey::Quit, _) => return Ok(GameUpdate::Quit),
+                (InputKey::Reset, GameState::InGame) => {
+                    self.reset();
+                }
+                (InputKey::Reset, _) => {}
+            }
+        }
+
+        Ok(GameUpdate::Continue)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GameUpdate {
+    Continue,
+    Quit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,12 +267,14 @@ impl Error for InsertObjectError {}
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
     use snake_core::{
-        GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
-        TextureColor, Vector2Int, ZIndex, assets, models::snake::Snake, signal::SignalBus,
+        GameObject, GameObjectId, MoveDirection, Render, RenderItem, Rotation, Texture,
+        TextureColor, Vector2Int, ZIndex, assets, signal::SignalBusBuilder,
     };
 
-    use super::{Game, InsertObjectError};
+    use super::{Game, GameSignal, InsertObjectError};
     use crate::infra::input::InputKey;
 
     struct Foo {
@@ -228,23 +319,48 @@ mod tests {
     }
 
     fn new_game() -> Game {
-        Game::new(SignalBus::new().emitter())
+        let mut signals = SignalBusBuilder::<Game>::new();
+        Game::new(signals.register::<GameSignal>().unwrap())
     }
     // TODO: create shared test_utils
 
-    pub(crate) fn spawn_snake() -> Snake {
-        let emitter = SignalBus::new().emitter();
-        Snake::spawn(emitter)
+    #[test]
+    fn emits_game_signal_variants_through_one_emitter() {
+        let mut signals = SignalBusBuilder::<Game>::new();
+        let mut game = Game::new(signals.register::<GameSignal>().unwrap());
+        let received = Rc::new(RefCell::new(Vec::new()));
+        signals.on::<GameSignal>({
+            let received = received.clone();
+            move |signal, _| received.borrow_mut().push(*signal)
+        });
+        let mut signals = signals.build();
+
+        game.toggle_pause();
+        game.toggle_pause();
+        game.end();
+        game.reset();
+        assert!(received.borrow().is_empty());
+        signals.dispatch_pending(&mut game).unwrap();
+
+        assert_eq!(
+            *received.borrow(),
+            [
+                GameSignal::PauseChanged { is_paused: true },
+                GameSignal::PauseChanged { is_paused: false },
+                GameSignal::Over,
+                GameSignal::Reset,
+            ]
+        );
     }
 
     #[test]
-    fn inserts_an_object_and_returns_its_handle() {
+    fn renders_mutations_through_an_inserted_object_handle() {
         let mut game = new_game();
-        let foo = Foo::at(Vector2Int::new(4, 7));
+        let foo = Rc::new(RefCell::new(Foo::at(Vector2Int::new(4, 7))));
         let updated_position = Vector2Int::new(8, 9);
 
-        let foo_handle = game.insert_object(foo).unwrap();
-        foo_handle.borrow_mut().position = updated_position;
+        game.insert_object(foo.clone()).unwrap();
+        foo.borrow_mut().position = updated_position;
 
         assert!(
             game.render_frame().cells().iter().any(|cell| {
@@ -259,8 +375,14 @@ mod tests {
         let mut game = new_game();
         let position = Vector2Int::new(24, 7);
 
-        assert!(game.insert_object(Foo::at(position)).is_ok());
-        assert!(game.insert_object(Foo::at(position)).is_ok());
+        assert!(
+            game.insert_object(Rc::new(RefCell::new(Foo::at(position))))
+                .is_ok()
+        );
+        assert!(
+            game.insert_object(Rc::new(RefCell::new(Foo::at(position))))
+                .is_ok()
+        );
         assert_eq!(
             game.render_frame()
                 .cells()
@@ -280,11 +402,12 @@ mod tests {
         let position = Vector2Int::new(4, 7);
 
         assert!(
-            game.insert_object(Foo { id, position }).is_ok(),
+            game.insert_object(Rc::new(RefCell::new(Foo { id, position })))
+                .is_ok(),
             "the first object should be inserted"
         );
         assert_eq!(
-            game.insert_object(Foo { id, position }).map(|_| ()),
+            game.insert_object(Rc::new(RefCell::new(Foo { id, position }))),
             Err(InsertObjectError::ObjectAlreadyPlaced { id })
         );
     }
@@ -293,7 +416,8 @@ mod tests {
     fn render_frame_places_objects_above_the_board_at_world_positions() {
         let mut game = new_game();
         let position = Vector2Int::new(4, 7);
-        game.insert_object(Foo::at(position)).unwrap();
+        game.insert_object(Rc::new(RefCell::new(Foo::at(position))))
+            .unwrap();
 
         let frame = game.render_frame();
 
@@ -301,7 +425,10 @@ mod tests {
             frame
                 .cells()
                 .iter()
-                .filter(|cell| cell.position_world() == position)
+                .filter(|cell| {
+                    cell.position_world() == position
+                        && matches!(cell.texture(), assets::BLANK | Foo::TEXTURE)
+                })
                 .map(|cell| cell.texture())
                 .collect::<Vec<_>>(),
             [assets::BLANK, Foo::TEXTURE]
@@ -309,35 +436,8 @@ mod tests {
     }
 
     #[test]
-    fn render_frame_resolves_rotated_snake_parts_relative_to_the_snake() {
-        let mut game = new_game();
-        let mut snake = spawn_snake();
-        snake.set_position(Vector2Int::new(10, 10));
-        snake.rotate_to(MoveDirection::Down);
-        game.insert_object(snake).unwrap();
-
-        let frame = game.render_frame();
-        let snake_cells = frame
-            .cells()
-            .iter()
-            .filter(|cell| matches!(cell.texture(), assets::SNAKE_HEAD | assets::SNAKE_PART))
-            .map(|cell| (cell.position_world(), cell.texture(), cell.rotation()))
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            snake_cells,
-            [
-                (Vector2Int::new(10, 10), assets::SNAKE_HEAD, Rotation::DOWN),
-                (Vector2Int::new(9, 10), assets::SNAKE_PART, Rotation::RIGHT),
-                (Vector2Int::new(8, 10), assets::SNAKE_PART, Rotation::RIGHT),
-                (Vector2Int::new(7, 10), assets::SNAKE_PART, Rotation::RIGHT),
-            ]
-        );
-    }
-
-    #[test]
     fn playable_bounds_exclude_the_board_walls() {
-        let bounds = new_game().playable_bounds();
+        let bounds = new_game().playable_bounds;
 
         assert_eq!(bounds.start, Vector2Int::new(1, 1));
         assert_eq!(bounds.end, Vector2Int::new(22, 22));

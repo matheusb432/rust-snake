@@ -2,18 +2,22 @@ use rand::RngExt;
 
 use crate::{
     Bounds, GameObject, GameObjectId, Render, RenderItem, Rotation, Transform, Vector2Int, ZIndex,
-    assets,
-    signal::{Signal, SignalEmitter},
+    assets, signal::SignalEmitter,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppleSignal {
+    Eaten { apple_id: GameObjectId },
+}
 
 pub struct Apple {
     id: GameObjectId,
     transform: Transform,
     eaten: bool,
-    emitter: SignalEmitter,
+    emitter: SignalEmitter<AppleSignal>,
 }
 impl Apple {
-    pub fn spawn(position_bounds: Bounds, emitter: SignalEmitter) -> Self {
+    pub fn spawn(position_bounds: Bounds, emitter: SignalEmitter<AppleSignal>) -> Self {
         let mut apple = Self {
             id: GameObjectId::new(),
             transform: Transform::default(),
@@ -29,7 +33,7 @@ impl Apple {
             true => AppleEatenOk::AlreadyEaten,
             false => {
                 self.eaten = true;
-                self.emitter.emit(Signal::AppleEaten { apple_id: self.id });
+                self.emitter.emit(AppleSignal::Eaten { apple_id: self.id });
                 AppleEatenOk::Eaten
             }
         }
@@ -92,11 +96,12 @@ impl Render for Apple {
 
 #[cfg(test)]
 mod tests {
-    use super::Apple;
-    use crate::{Bounds, GameObject, Vector2Int, signal::SignalBus};
+    use super::{Apple, AppleSignal};
+    use crate::{Bounds, GameObject, Vector2Int, signal::SignalBusBuilder};
 
     fn spawn_apple(bounds: Bounds) -> Apple {
-        let emitter = SignalBus::new().emitter();
+        let mut signals = SignalBusBuilder::<()>::new();
+        let emitter = signals.register::<AppleSignal>().unwrap();
         Apple::spawn(bounds, emitter)
     }
 

@@ -1,4 +1,8 @@
-use crate::{Render, RenderItem, models::snake::Snake, signal::SignalBus};
+use crate::{
+    Render, RenderItem,
+    models::snake::{Snake, SnakeSignal},
+    signal::SignalBusBuilder,
+};
 
 pub(crate) fn collect_render_items(renderable: &dyn Render) -> Vec<RenderItem> {
     let mut items = Vec::new();
@@ -7,6 +11,7 @@ pub(crate) fn collect_render_items(renderable: &dyn Render) -> Vec<RenderItem> {
 }
 
 pub(crate) fn spawn_snake() -> Snake {
-    let emitter = SignalBus::new().emitter();
+    let mut signals = SignalBusBuilder::<()>::new();
+    let emitter = signals.register::<SnakeSignal>().unwrap();
     Snake::spawn(emitter)
 }

@@ -1,112 +1,112 @@
-use std::{cell::RefCell, rc::Rc};
+use snake_core::{GameObjectId, signal::SignalBusBuilder};
 
-use snake_core::{
-    GameObjectId,
-    signal::{Signal, SignalBus},
-};
+#[derive(Clone, Copy)]
+struct AppleEaten {
+    apple_id: GameObjectId,
+}
+
+struct GamePauseChanged;
+struct GameOver;
 
 #[test]
 fn dispatches_an_emitted_signal_to_every_subscriber() {
-    let mut signal_bus = SignalBus::new();
-    let signal_emitter = signal_bus.emitter();
+    #[derive(Default)]
+    struct Context {
+        apple_ids_received_first: Vec<GameObjectId>,
+        apple_ids_received_second: Vec<GameObjectId>,
+    }
+
+    let mut signal_bus_builder = SignalBusBuilder::<Context>::new();
+    let signal_emitter = signal_bus_builder.register::<AppleEaten>().unwrap();
+    signal_bus_builder.on::<AppleEaten>(|signal, context| {
+        context.apple_ids_received_first.push(signal.apple_id);
+    });
+    signal_bus_builder.on::<AppleEaten>(|signal, context| {
+        context.apple_ids_received_second.push(signal.apple_id);
+    });
+    let mut signal_bus = signal_bus_builder.build();
+    let mut context = Context::default();
     let apple_id = GameObjectId::new();
-    let apple_ids_received_first = Rc::new(RefCell::new(Vec::new()));
-    let apple_ids_received_second = Rc::new(RefCell::new(Vec::new()));
 
-    signal_bus.subscribe({
-        let apple_ids_received = Rc::clone(&apple_ids_received_first);
-        move |signal| {
-            if let Signal::AppleEaten { apple_id } = signal {
-                apple_ids_received.borrow_mut().push(*apple_id);
-            }
-        }
-    });
-    signal_bus.subscribe({
-        let apple_ids_received = Rc::clone(&apple_ids_received_second);
-        move |signal| {
-            if let Signal::AppleEaten { apple_id } = signal {
-                apple_ids_received.borrow_mut().push(*apple_id);
-            }
-        }
-    });
+    signal_emitter.emit(AppleEaten { apple_id });
 
-    signal_emitter.emit(Signal::AppleEaten { apple_id });
+    assert!(context.apple_ids_received_first.is_empty());
+    assert!(context.apple_ids_received_second.is_empty());
 
-    assert!(apple_ids_received_first.borrow().is_empty());
-    assert!(apple_ids_received_second.borrow().is_empty());
+    signal_bus.dispatch_pending(&mut context).unwrap();
 
-    signal_bus.dispatch_pending();
-
-    assert_eq!(*apple_ids_received_first.borrow(), [apple_id]);
-    assert_eq!(*apple_ids_received_second.borrow(), [apple_id]);
+    assert_eq!(context.apple_ids_received_first, [apple_id]);
+    assert_eq!(context.apple_ids_received_second, [apple_id]);
 }
 
 #[test]
 fn dispatches_signals_in_emission_order() {
-    let mut signal_bus = SignalBus::new();
-    let signal_emitter = signal_bus.emitter();
-    let signals_received = Rc::new(RefCell::new(Vec::new()));
+    #[derive(Default)]
+    struct Context {
+        signals_received: Vec<&'static str>,
+    }
 
-    signal_bus.subscribe({
-        let signals_received = Rc::clone(&signals_received);
-        move |signal| {
-            let signal_name = match signal {
-                Signal::AppleEaten { .. } => "apple_eaten",
-                Signal::GamePauseChanged { .. } => "game_pause_changed",
-                Signal::GameOver => "game_over",
-            };
-            signals_received.borrow_mut().push(signal_name);
-        }
+    let mut signal_bus_builder = SignalBusBuilder::<Context>::new();
+    let game_pause_changed_emitter = signal_bus_builder.register::<GamePauseChanged>().unwrap();
+    let game_over_emitter = signal_bus_builder.register::<GameOver>().unwrap();
+    let apple_eaten_emitter = signal_bus_builder.register::<AppleEaten>().unwrap();
+    signal_bus_builder.on::<GamePauseChanged>(|_, context| {
+        context.signals_received.push("game_pause_changed");
     });
+    signal_bus_builder.on::<GameOver>(|_, context| {
+        context.signals_received.push("game_over");
+    });
+    signal_bus_builder.on::<AppleEaten>(|_, context| {
+        context.signals_received.push("apple_eaten");
+    });
+    let mut signal_bus = signal_bus_builder.build();
+    let mut context = Context::default();
 
-    signal_emitter.emit(Signal::GamePauseChanged { is_paused: true });
-    signal_emitter.emit(Signal::GameOver);
-    signal_emitter.emit(Signal::AppleEaten {
+    game_pause_changed_emitter.emit(GamePauseChanged);
+    game_over_emitter.emit(GameOver);
+    apple_eaten_emitter.emit(AppleEaten {
         apple_id: GameObjectId::new(),
     });
-    signal_bus.dispatch_pending();
+    signal_bus.dispatch_pending(&mut context).unwrap();
 
     assert_eq!(
-        *signals_received.borrow(),
+        context.signals_received,
         ["game_pause_changed", "game_over", "apple_eaten"]
     );
 }
 
 #[test]
 fn defers_signals_emitted_by_subscribers_until_the_next_dispatch() {
-    let mut signal_bus = SignalBus::new();
-    let signal_emitter = signal_bus.emitter();
-    let signals_received = Rc::new(RefCell::new(Vec::new()));
+    #[derive(Default)]
+    struct Context {
+        signals_received: Vec<&'static str>,
+    }
 
-    signal_bus.subscribe({
-        let signal_emitter = signal_emitter.clone();
-        move |signal| {
-            if matches!(signal, Signal::GameOver) {
-                signal_emitter.emit(Signal::GamePauseChanged { is_paused: true });
-            }
-        }
+    let mut signal_bus_builder = SignalBusBuilder::<Context>::new();
+    let game_pause_changed_emitter = signal_bus_builder.register::<GamePauseChanged>().unwrap();
+    let game_over_emitter = signal_bus_builder.register::<GameOver>().unwrap();
+    signal_bus_builder.on::<GameOver>({
+        let game_pause_changed_emitter = game_pause_changed_emitter.clone();
+        move |_, _| game_pause_changed_emitter.emit(GamePauseChanged)
     });
-    signal_bus.subscribe({
-        let signals_received = Rc::clone(&signals_received);
-        move |signal| {
-            let signal_name = match signal {
-                Signal::GamePauseChanged { .. } => "game_pause_changed",
-                Signal::GameOver => "game_over",
-                Signal::AppleEaten { .. } => return,
-            };
-            signals_received.borrow_mut().push(signal_name);
-        }
+    signal_bus_builder.on::<GameOver>(|_, context| {
+        context.signals_received.push("game_over");
     });
+    signal_bus_builder.on::<GamePauseChanged>(|_, context| {
+        context.signals_received.push("game_pause_changed");
+    });
+    let mut signal_bus = signal_bus_builder.build();
+    let mut context = Context::default();
 
-    signal_emitter.emit(Signal::GameOver);
-    signal_bus.dispatch_pending();
+    game_over_emitter.emit(GameOver);
+    signal_bus.dispatch_pending(&mut context).unwrap();
 
-    assert_eq!(*signals_received.borrow(), ["game_over"]);
+    assert_eq!(context.signals_received, ["game_over"]);
 
-    signal_bus.dispatch_pending();
+    signal_bus.dispatch_pending(&mut context).unwrap();
 
     assert_eq!(
-        *signals_received.borrow(),
+        context.signals_received,
         ["game_over", "game_pause_changed"]
     );
 }
