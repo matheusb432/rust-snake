@@ -7,7 +7,7 @@ use crossterm::{
     style::{Color, PrintStyledContent, Stylize},
     terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
 };
-use snake_core::TextureColor;
+use snake_core::{TextureColor, render::RenderSpace};
 
 use crate::render::{RenderCell, RenderFrame, RenderViewport, Renderer};
 
@@ -80,7 +80,11 @@ struct TerminalFrame {
 impl TerminalFrame {
     fn try_from_render_viewport(viewport: RenderViewport) -> Result<Self> {
         let width_columns = Self::terminal_width_columns(viewport)?;
-        let height_rows = u16::try_from(viewport.height_cells())
+        let height_rows = viewport
+            .height_cells()
+            .checked_add(viewport.rows_bottom())
+            .context("render viewport height exceeds terminal row capacity")?;
+        let height_rows = u16::try_from(height_rows)
             .context("render viewport height exceeds terminal row capacity")?;
         let cells = (0..height_rows)
             .flat_map(|row| {
@@ -187,10 +191,28 @@ impl<W: Write> CrosstermRenderer<W> {
     }
 
     fn composite_render_cell(terminal_frame: &mut TerminalFrame, cell: RenderCell) -> Result<()> {
-        let position_world = cell.position_world();
-        let Some(position) =
-            TerminalPosition::try_from_render_position(position_world, terminal_frame.viewport())?
-        else {
+        let position_render = cell.position();
+        let position = match cell.space() {
+            RenderSpace::World => TerminalPosition::try_from_render_position(
+                position_render,
+                terminal_frame.viewport(),
+            )?,
+            RenderSpace::Screen => {
+                match (
+                    u16::try_from(position_render.x),
+                    u16::try_from(position_render.y),
+                ) {
+                    (Ok(column), Ok(row))
+                        if column < terminal_frame.width_columns
+                            && row < terminal_frame.height_rows =>
+                    {
+                        Some(TerminalPosition::new(column, row))
+                    }
+                    _ => None,
+                }
+            }
+        };
+        let Some(position) = position else {
             return Ok(());
         };
         let cell_index = terminal_frame.cell_index(position);
@@ -543,7 +565,7 @@ mod tests {
 
     #[test]
     fn render_skips_positions_outside_the_viewport() {
-        let viewport = RenderViewport::new(24, 24);
+        let viewport = RenderViewport::new(24, 24).with_rows_bottom(1);
         let frame = RenderFrame::new(
             viewport,
             [

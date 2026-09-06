@@ -87,12 +87,19 @@ impl Texture {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderSpace {
+    World,
+    Screen,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RenderItem {
     position_local: Vector2Int,
     texture: Texture,
     rotation: Rotation,
     z_index: ZIndex,
     fills_cell: bool,
+    space: RenderSpace,
 }
 
 impl RenderItem {
@@ -108,6 +115,7 @@ impl RenderItem {
             rotation,
             z_index,
             fills_cell: false,
+            space: RenderSpace::World,
         }
     }
 
@@ -123,7 +131,27 @@ impl RenderItem {
             rotation,
             z_index,
             fills_cell: true,
+            space: RenderSpace::World,
         }
+    }
+
+    pub const fn screen_glyph(
+        position_local: Vector2Int,
+        texture: Texture,
+        z_index: ZIndex,
+    ) -> Self {
+        Self {
+            position_local,
+            texture,
+            rotation: Rotation::RIGHT,
+            z_index,
+            fills_cell: false,
+            space: RenderSpace::Screen,
+        }
+    }
+
+    pub const fn space(self) -> RenderSpace {
+        self.space
     }
 
     pub const fn position_local(self) -> Vector2Int {

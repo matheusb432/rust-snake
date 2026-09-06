@@ -19,6 +19,7 @@ mod game;
 mod infra;
 mod render;
 mod scene;
+mod status_line;
 
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
@@ -35,8 +36,6 @@ fn main() -> Result<ExitCode> {
     let mut renderer = CrosstermRenderer::default();
     let (input_tx, input_rx) = mpsc::channel();
 
-    // TODO: move to own game object
-    // println!("\renter move ['{}' to quit]: ", InputKey::QUIT_CHARACTER);
     thread::spawn(move || {
         loop {
             if let Ok(Event::Key(key)) = event::read() {
@@ -60,7 +59,7 @@ fn main() -> Result<ExitCode> {
             }
         };
         if let Some(key) = first_key {
-            game.queue_input(InputKey::from_keycode(key.code));
+            game.queue_input(Some(InputKey::from_keycode(key.code)));
         }
 
         if game.update(delta_time, &mut signal_bus)? == GameUpdate::Quit {

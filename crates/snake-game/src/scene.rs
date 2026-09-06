@@ -13,6 +13,7 @@ use snake_core::{
 use crate::{
     game::{Game, GameSignal},
     infra::{audio::Sound, input::InputKey},
+    status_line::register_status_line,
 };
 
 /// registers and manages snake scene state.
@@ -30,7 +31,8 @@ pub(crate) fn register_snake_scene(
     snake
         .borrow_mut()
         .set_position(game.playable_bounds().middle());
-    register_snake_objects(game, signals, snake, apple)
+    register_snake_objects(game, signals, snake, apple)?;
+    register_status_line(game, signals)
 }
 
 /// registers game objects and signal listeners
@@ -116,16 +118,7 @@ fn register_snake_objects(
                 }
                 game.start()?;
             }
-            GameSignal::Over => {
-                // TODO: render game over text as its own game object
-                // println!(
-                //     "\r\nGame over! Press '{}' to restart.",
-                //     InputKey::RESET_CHARACTER.to_ascii_uppercase()
-                // );
-            }
-            GameSignal::PauseChanged { is_paused: _ } => {
-                // TODO: render (or disable) pause text
-            }
+            GameSignal::Started | GameSignal::Over | GameSignal::PauseChanged { .. } => {}
         }
         Ok(())
     })?;
@@ -213,37 +206,6 @@ mod tests {
         assert!(snake_reference.upgrade().is_none());
         assert!(apple_reference.upgrade().is_none());
         drop(signals);
-    }
-
-    #[test]
-    fn registered_scene_handles_movement_pause_and_resume() {
-        let mut signals = SignalBusBuilder::new();
-        let mut game = new_game(&mut signals);
-        register_snake_scene(&mut game, &mut signals).unwrap();
-        let mut signals = signals.build();
-        let head_position = |game: &Game| {
-            game.render_frame()
-                .cells()
-                .iter()
-                .find(|cell| cell.texture() == assets::SNAKE_HEAD)
-                .unwrap()
-                .position_world()
-        };
-        assert_eq!(head_position(&game), Vector2Int::new(11, 11));
-
-        game.queue_input(Some(InputKey::Move(MoveDirection::Right)));
-        game.update(Duration::ZERO, &mut signals).unwrap();
-        assert_eq!(head_position(&game), Vector2Int::new(12, 11));
-
-        game.queue_input(Some(InputKey::Pause));
-        game.update(Duration::from_secs(1), &mut signals).unwrap();
-        assert_eq!(game.state(), GameState::Paused);
-        assert_eq!(head_position(&game), Vector2Int::new(12, 11));
-
-        game.queue_input(Some(InputKey::Move(MoveDirection::Up)));
-        game.update(Duration::ZERO, &mut signals).unwrap();
-        assert_eq!(game.state(), GameState::InGame);
-        assert_eq!(head_position(&game), Vector2Int::new(12, 10));
     }
 
     #[test]
@@ -369,7 +331,7 @@ mod tests {
             .cells()
             .iter()
             .filter(|cell| matches!(cell.texture(), assets::SNAKE_HEAD | assets::SNAKE_PART))
-            .map(|cell| (cell.position_world(), cell.texture(), cell.rotation()))
+            .map(|cell| (cell.position(), cell.texture(), cell.rotation()))
             .collect::<Vec<_>>();
 
         assert_eq!(

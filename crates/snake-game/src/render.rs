@@ -1,10 +1,11 @@
 use anyhow::Result;
-use snake_core::{Render, RenderItem, Rotation, Texture, Vector2Int, ZIndex};
+use snake_core::{Render, RenderItem, Rotation, Texture, Vector2Int, ZIndex, render::RenderSpace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RenderViewport {
     width_cells: usize,
     height_cells: usize,
+    rows_bottom: usize,
 }
 
 impl RenderViewport {
@@ -12,6 +13,7 @@ impl RenderViewport {
         Self {
             width_cells,
             height_cells,
+            rows_bottom: 0,
         }
     }
 
@@ -22,62 +24,75 @@ impl RenderViewport {
     pub(crate) const fn height_cells(self) -> usize {
         self.height_cells
     }
+
+    pub(crate) const fn with_rows_bottom(mut self, rows: usize) -> Self {
+        self.rows_bottom = rows;
+        self
+    }
+
+    pub(crate) const fn rows_bottom(self) -> usize {
+        self.rows_bottom
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RenderCell {
-    position_world: Vector2Int,
+    position: Vector2Int,
     texture: Texture,
     rotation: Rotation,
     z_index: ZIndex,
     fills_cell: bool,
+    space: RenderSpace,
 }
 
 impl RenderCell {
     #[cfg(test)]
     pub(crate) const fn new(
-        position_world: Vector2Int,
+        position: Vector2Int,
         texture: Texture,
         rotation: Rotation,
         z_index: ZIndex,
     ) -> Self {
         Self {
-            position_world,
+            position,
             texture,
             rotation,
             z_index,
             fills_cell: false,
+            space: RenderSpace::World,
         }
     }
 
     fn from_render_item(position_origin: Vector2Int, item: RenderItem) -> Self {
         Self {
-            position_world: position_origin + item.position_local(),
+            position: position_origin + item.position_local(),
             texture: item.texture(),
             rotation: item.rotation(),
             z_index: item.z_index(),
             fills_cell: item.fills_cell(),
+            space: item.space(),
         }
     }
 
     #[cfg(test)]
     pub(crate) const fn from_filled_cell(
-        position_world: Vector2Int,
+        position: Vector2Int,
         texture: Texture,
         rotation: Rotation,
         z_index: ZIndex,
     ) -> Self {
         Self {
-            position_world,
+            position,
             texture,
             rotation,
             z_index,
             fills_cell: true,
+            space: RenderSpace::World,
         }
     }
 
-    pub(crate) const fn position_world(self) -> Vector2Int {
-        self.position_world
+    pub(crate) const fn position(self) -> Vector2Int {
+        self.position
     }
 
     pub(crate) const fn texture(self) -> Texture {
@@ -90,6 +105,10 @@ impl RenderCell {
 
     pub(crate) const fn fills_cell(self) -> bool {
         self.fills_cell
+    }
+
+    pub(crate) const fn space(self) -> RenderSpace {
+        self.space
     }
 }
 

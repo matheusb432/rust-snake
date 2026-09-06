@@ -26,6 +26,7 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(1000 / 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GameSignal {
+    Started,
     Over,
     Reset,
     PauseChanged { is_paused: bool },
@@ -151,7 +152,10 @@ impl Game {
             append_render_cells(&mut cells, object.position(), &*object);
         }
 
-        RenderFrame::new(RenderViewport::new(BOARD_SIZE_X, BOARD_SIZE_Y), cells)
+        RenderFrame::new(
+            RenderViewport::new(BOARD_SIZE_X, BOARD_SIZE_Y).with_rows_bottom(1),
+            cells,
+        )
     }
 
     pub fn render_frame_if_due(&mut self, delta_time: Duration) -> Option<RenderFrame> {
@@ -172,6 +176,7 @@ impl Game {
             bail!("game already started, it cannot be started.")
         }
         self.state = GameState::InGame;
+        self.emitter.emit(GameSignal::Started);
         Ok(())
     }
 
@@ -185,6 +190,8 @@ impl Game {
             bail!("game is not paused, it cannot be unpaused.")
         }
         self.state = GameState::InGame;
+        self.emitter
+            .emit(GameSignal::PauseChanged { is_paused: false });
         Ok(())
     }
 
@@ -204,6 +211,15 @@ impl Game {
 
     fn apply_input(&mut self) -> Result<GameUpdate> {
         for input_key in self.flush_input() {
+            if input_key == InputKey::Quit {
+                return Ok(GameUpdate::Quit);
+            }
+            if self.state == GameState::NotStarted {
+                self.start()?;
+                if !matches!(input_key, InputKey::Move(_)) {
+                    continue;
+                }
+            }
             let game_state = self.state;
             match (input_key, game_state) {
                 (input_key, GameState::GameOver) => {
@@ -213,11 +229,8 @@ impl Game {
                     break;
                 }
                 (InputKey::Move(direction), game_state) => {
-                    match game_state {
-                        GameState::NotStarted => self.start()?,
-                        GameState::Paused => self.unpause()?,
-                        GameState::InGame => (),
-                        GameState::GameOver => break,
+                    if game_state == GameState::Paused {
+                        self.unpause()?;
                     }
                     for handler in &mut self.input_handlers {
                         handler(InputKey::Move(direction));
@@ -226,11 +239,10 @@ impl Game {
                 (InputKey::Pause, _) => {
                     self.toggle_pause();
                 }
-                (InputKey::Quit, _) => return Ok(GameUpdate::Quit),
                 (InputKey::Reset, GameState::InGame) => {
                     self.reset();
                 }
-                (InputKey::Reset, _) => {}
+                (InputKey::Reset | InputKey::Other | InputKey::Quit, _) => {}
             }
         }
 
@@ -371,7 +383,7 @@ mod tests {
 
         assert!(
             game.render_frame().cells().iter().any(|cell| {
-                cell.position_world() == updated_position && cell.texture() == Foo::TEXTURE
+                cell.position() == updated_position && cell.texture() == Foo::TEXTURE
             }),
             "the stored object should reflect mutations through its returned handle"
         );
@@ -394,9 +406,7 @@ mod tests {
             game.render_frame()
                 .cells()
                 .iter()
-                .filter(|cell| {
-                    cell.position_world() == position && cell.texture() == Foo::TEXTURE
-                })
+                .filter(|cell| cell.position() == position && cell.texture() == Foo::TEXTURE)
                 .count(),
             2
         );
@@ -433,7 +443,7 @@ mod tests {
                 .cells()
                 .iter()
                 .filter(|cell| {
-                    cell.position_world() == position
+                    cell.position() == position
                         && matches!(cell.texture(), assets::BLANK | Foo::TEXTURE)
                 })
                 .map(|cell| cell.texture())

@@ -82,6 +82,7 @@ pub(crate) enum InputKey {
     Quit,
     Reset,
     Pause,
+    Other,
 }
 
 impl InputKey {
@@ -89,16 +90,16 @@ impl InputKey {
     pub(crate) const PAUSE_CHARACTER: char = 'p';
     pub(crate) const RESET_CHARACTER: char = 'r';
 
-    pub fn from_keycode(key_code: KeyCode) -> Option<Self> {
+    pub fn from_keycode(key_code: KeyCode) -> Self {
         match key_code {
-            KeyCode::Up => Some(Self::Move(MoveDirection::Up)),
-            KeyCode::Down => Some(Self::Move(MoveDirection::Down)),
-            KeyCode::Left => Some(Self::Move(MoveDirection::Left)),
-            KeyCode::Right => Some(Self::Move(MoveDirection::Right)),
-            KeyCode::Char(Self::QUIT_CHARACTER) => Some(Self::Quit),
-            KeyCode::Char(Self::PAUSE_CHARACTER) => Some(Self::Pause),
-            KeyCode::Char(Self::RESET_CHARACTER) => Some(Self::Reset),
-            _ => None,
+            KeyCode::Up => Self::Move(MoveDirection::Up),
+            KeyCode::Down => Self::Move(MoveDirection::Down),
+            KeyCode::Left => Self::Move(MoveDirection::Left),
+            KeyCode::Right => Self::Move(MoveDirection::Right),
+            KeyCode::Char(Self::QUIT_CHARACTER) => Self::Quit,
+            KeyCode::Char(Self::PAUSE_CHARACTER) => Self::Pause,
+            KeyCode::Char(Self::RESET_CHARACTER) => Self::Reset,
+            _ => Self::Other,
         }
     }
 }
@@ -120,10 +121,7 @@ mod tests {
         ];
 
         for (key_code, direction) in cases {
-            assert_eq!(
-                InputKey::from_keycode(key_code),
-                Some(InputKey::Move(direction))
-            );
+            assert_eq!(InputKey::from_keycode(key_code), InputKey::Move(direction));
         }
     }
 
@@ -131,12 +129,12 @@ mod tests {
     fn recognizes_quit_key() {
         assert_eq!(
             InputKey::from_keycode(KeyCode::Char(InputKey::QUIT_CHARACTER)),
-            Some(InputKey::Quit)
+            InputKey::Quit
         );
     }
 
     #[test]
-    fn ignores_irrelevant_keys() {
-        assert_eq!(InputKey::from_keycode(KeyCode::Enter), None);
+    fn recognizes_other_keys_for_the_start_prompt() {
+        assert_eq!(InputKey::from_keycode(KeyCode::Enter), InputKey::Other);
     }
 }
