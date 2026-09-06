@@ -98,6 +98,7 @@ fn register_snake_objects(
                 snake_id: killed_id,
             } => {
                 if *killed_id == snake_id && snake.upgrade().is_some() {
+                    game.play_sound(Sound::Impact);
                     game.end();
                 }
             }
@@ -118,7 +119,17 @@ fn register_snake_objects(
                 }
                 game.start()?;
             }
-            GameSignal::Started | GameSignal::Over | GameSignal::PauseChanged { .. } => {}
+            &GameSignal::PauseChanged { is_paused } => {
+                game.play_sound(if is_paused {
+                    Sound::Pause
+                } else {
+                    Sound::Unpause
+                });
+            }
+            GameSignal::Started => {
+                game.play_sound(Sound::Start);
+            }
+            GameSignal::Over => {}
         }
         Ok(())
     })?;

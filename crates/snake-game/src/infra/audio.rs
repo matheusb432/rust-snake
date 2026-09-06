@@ -57,24 +57,27 @@ impl Volume {
 }
 
 pub enum Sound {
+    Start,
     Coin,
     // TODO: implement sfx
     Pause,
     Unpause,
-    SnakeKilled,
+    Impact,
 }
 impl Sound {
     pub(crate) fn into_asset(self) -> &'static [u8] {
         match self {
+            Self::Start => START,
             Self::Coin => SOUND,
             Self::Pause => PAUSE_SOUND,
             Self::Unpause => UNPAUSE_SOUND,
-            Self::SnakeKilled => SNAKE_KILLED_SOUND,
+            Self::Impact => IMPACT_SOUND,
         }
     }
 }
 
+static START: &[u8] = include_bytes!("../../../../assets/start.wav");
 static SOUND: &[u8] = include_bytes!("../../../../assets/coin.wav");
 static PAUSE_SOUND: &[u8] = include_bytes!("../../../../assets/pause.wav");
 static UNPAUSE_SOUND: &[u8] = include_bytes!("../../../../assets/unpause.wav");
-static SNAKE_KILLED_SOUND: &[u8] = include_bytes!("../../../../assets/snake-killed.wav");
+static IMPACT_SOUND: &[u8] = include_bytes!("../../../../assets/impact.wav");
