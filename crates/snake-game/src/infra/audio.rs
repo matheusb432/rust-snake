@@ -76,8 +76,8 @@ impl Sound {
     }
 }
 
-static START: &[u8] = include_bytes!("../../../../assets/start.wav");
-static SOUND: &[u8] = include_bytes!("../../../../assets/coin.wav");
-static PAUSE_SOUND: &[u8] = include_bytes!("../../../../assets/pause.wav");
-static UNPAUSE_SOUND: &[u8] = include_bytes!("../../../../assets/unpause.wav");
-static IMPACT_SOUND: &[u8] = include_bytes!("../../../../assets/impact.wav");
+static START: &[u8] = include_bytes!("../../../../assets/start.flac");
+static SOUND: &[u8] = include_bytes!("../../../../assets/coin.flac");
+static PAUSE_SOUND: &[u8] = include_bytes!("../../../../assets/pause.flac");
+static UNPAUSE_SOUND: &[u8] = include_bytes!("../../../../assets/unpause.flac");
+static IMPACT_SOUND: &[u8] = include_bytes!("../../../../assets/impact.flac");

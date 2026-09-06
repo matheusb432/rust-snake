@@ -12,4 +12,4 @@ uuid = { version = "1.26.0", features = ["v4"] }
 rand = { version = "0.10.2", default-features = false, features = ["thread_rng"] }
 
 crossterm = "0.29.0"
-rodio = { version = "0.22.2", default-features = false, features = ["playback", "wav"] }
+rodio = { version = "0.22.2", default-features = false, features = ["playback", "flac"] }
