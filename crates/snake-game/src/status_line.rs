@@ -20,10 +20,15 @@ pub(crate) fn register_status_line(
         "Game over! Press '{}' to restart.",
         InputKey::RESET_CHARACTER.to_ascii_uppercase()
     );
+    let won = format!(
+        "You won! Press '{}' to restart.",
+        InputKey::RESET_CHARACTER.to_ascii_uppercase()
+    );
     for (content, state) in [
         ("Press any key to start", GameState::NotStarted),
         ("Paused", GameState::Paused),
         (game_over.as_str(), GameState::GameOver),
+        (won.as_str(), GameState::Won),
     ] {
         let mut text = Text::new(position, content);
         text.set_visible(game.state() == state);

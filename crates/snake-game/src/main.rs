@@ -8,7 +8,7 @@ use crate::{
     game::{Game, GameSignal, GameUpdate},
     infra::{
         audio::RodioAudioClient, crossterm_renderer::CrosstermRenderer, input::InputKey,
-        terminal::TerminalSession,
+        random::RandRandomSource, terminal::TerminalSession,
     },
     render::Renderer,
     scene::register_snake_scene,
@@ -30,7 +30,11 @@ fn main() -> Result<ExitCode> {
     let mut signals = SignalBusBuilder::new();
     let mut game = Game::new(signals.register::<GameSignal>()?, RodioAudioClient::new()?);
 
-    register_snake_scene(&mut game, &mut signals)?;
+    register_snake_scene(
+        &mut game,
+        &mut signals,
+        RandRandomSource::new(rand::random()),
+    )?;
 
     let mut signal_bus = signals.build();
     let mut renderer = CrosstermRenderer::default();

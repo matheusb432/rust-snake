@@ -1,6 +1,9 @@
-use std::array;
+use std::{array, num::NonZeroUsize};
 
-use snake_core::{Render, RenderItem, Rotation, Texture, Vector2Int, ZIndex, assets};
+use snake_core::{
+    Bounds, Render, RenderItem, Rotation, Texture, Vector2Int, ZIndex, assets,
+    collision::vacant_cells, random::RandomSource,
+};
 
 pub(crate) const BOARD_SIZE_X: usize = 24;
 pub(crate) const BOARD_SIZE_Y: usize = 24;
@@ -48,7 +51,23 @@ impl Board {
         }
     }
 
-    pub fn classify_position(position: Vector2Int) -> BoardPosition {
+    pub fn playable_bounds() -> Bounds {
+        Bounds {
+            start: Vector2Int::new(1, 1),
+            end: Vector2Int::new((BOARD_SIZE_X - 1) as i32, (BOARD_SIZE_Y - 1) as i32),
+        }
+    }
+
+    pub fn vacant_position(
+        occupied: impl IntoIterator<Item = Vector2Int>,
+        random: &mut dyn RandomSource,
+    ) -> Option<Vector2Int> {
+        let vacant = vacant_cells(Self::playable_bounds(), occupied);
+        let length = NonZeroUsize::new(vacant.len())?;
+        Some(vacant[random.index(length)])
+    }
+
+    fn classify_position(position: Vector2Int) -> BoardPosition {
         let x_max = (BOARD_SIZE_X - 1) as i32;
         let y_max = (BOARD_SIZE_Y - 1) as i32;
         let x_is_edge = position.x == 0 || position.x == x_max;
@@ -95,7 +114,7 @@ fn create_default_board() -> [[Texture; BOARD_SIZE_Y]; BOARD_SIZE_X] {
 
 #[cfg(test)]
 mod tests {
-    use snake_core::{Rotation, assets};
+    use snake_core::{Rotation, Vector2Int, assets, collision::ColliderShape};
 
     use super::{BOARD_SIZE_X, BOARD_SIZE_Y, Board, create_default_board};
 
@@ -137,5 +156,15 @@ mod tests {
                 .iter()
                 .all(|texture| *texture == assets::BLANK)
         }));
+
+        let boundary = ColliderShape::OutsideBounds(Board::playable_bounds());
+        for (x, column) in board.iter().enumerate() {
+            for (y, texture) in column.iter().enumerate() {
+                assert_eq!(
+                    boundary.contains_cell(Vector2Int::new(x as i32, y as i32)),
+                    *texture != assets::BLANK,
+                );
+            }
+        }
     }
 }

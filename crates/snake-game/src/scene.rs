@@ -1,16 +1,18 @@
 use std::{cell::RefCell, rc::Rc};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use snake_core::{
     GameObject, Transform, TransformRotation,
     models::{
         apple::{Apple, AppleSignal},
         snake::{Snake, SnakeSignal},
     },
+    random::RandomSource,
     signal::SignalBusBuilder,
 };
 
 use crate::{
+    board::Board,
     game::{Game, GameSignal},
     infra::{audio::Sound, input::InputKey},
     status_line::register_status_line,
@@ -20,18 +22,18 @@ use crate::{
 pub(crate) fn register_snake_scene(
     game: &mut Game,
     signals: &mut SignalBusBuilder<Game, anyhow::Error>,
+    random: impl RandomSource + 'static,
 ) -> Result<()> {
-    let snake = Rc::new(RefCell::new(Snake::spawn(
-        signals.register::<SnakeSignal>()?,
-    )));
+    let random: Rc<RefCell<dyn RandomSource>> = Rc::new(RefCell::new(random));
+    let mut snake = Snake::spawn(signals.register::<SnakeSignal>()?);
+    snake.set_position(game.playable_bounds().middle());
+    let position = Board::vacant_position(snake.occupied_cells(), &mut *random.borrow_mut())
+        .ok_or_else(|| anyhow!("board has no vacant cell for the initial apple"))?;
     let apple = Rc::new(RefCell::new(Apple::spawn(
-        game.playable_bounds(),
+        position,
         signals.register::<AppleSignal>()?,
     )));
-    snake
-        .borrow_mut()
-        .set_position(game.playable_bounds().middle());
-    register_snake_objects(game, signals, snake, apple)?;
+    register_snake_objects(game, signals, Rc::new(RefCell::new(snake)), apple, random)?;
     register_status_line(game, signals)
 }
 
@@ -41,6 +43,7 @@ fn register_snake_objects(
     signals: &mut SignalBusBuilder<Game, anyhow::Error>,
     snake: Rc<RefCell<Snake>>,
     apple: Rc<RefCell<Apple>>,
+    random: Rc<RefCell<dyn RandomSource>>,
 ) -> Result<()> {
     let snake_id = snake.borrow().id();
     let apple_id = apple.borrow().id();
@@ -53,39 +56,55 @@ fn register_snake_objects(
         let snake = snake_reference.clone();
         move |input| {
             if let (InputKey::Move(direction), Some(snake)) = (input, snake.upgrade()) {
-                snake.borrow_mut().move_in_direction(direction);
+                snake.borrow_mut().request_movement(direction);
             }
         }
     });
     game.on_update({
         let snake = snake_reference.clone();
-        let apple = apple_reference.clone();
-        move |delta_time, bounds| {
-            let snake = snake.upgrade();
-            if let Some(snake) = &snake {
+        move |delta_time, _| {
+            if let Some(snake) = snake.upgrade() {
                 snake.borrow_mut().tick(delta_time);
             }
-            let Some(apple) = apple.upgrade() else {
-                return;
-            };
-            let can_eat = snake.is_some_and(|snake| {
-                let snake = snake.borrow();
-                snake.is_alive() && snake.position() == apple.borrow().position()
-            });
-            if can_eat {
-                apple.borrow_mut().be_eaten();
+        }
+    });
+    game.on_collision_check({
+        let snake = snake_reference.clone();
+        let apple = apple_reference.clone();
+        move |bounds| {
+            if let Some(snake) = snake.upgrade() {
+                let food = apple
+                    .upgrade()
+                    .and_then(|apple| apple.borrow().collision_cell());
+                snake.borrow_mut().resolve_collisions(bounds, food);
             }
-            apple.borrow_mut().tick(bounds);
+        }
+    });
+    signals.on::<SnakeSignal>({
+        let apple = apple_reference.clone();
+        move |signal, _| {
+            if let Some(apple) = apple.upgrade() {
+                apple.borrow_mut().on_snake_signal(signal);
+            }
         }
     });
     signals.on::<AppleSignal>({
         let snake = snake_reference.clone();
+        let apple = apple_reference.clone();
+        let random = random.clone();
         move |signal, game| match signal {
             AppleSignal::Eaten { apple_id: eaten_id } => {
                 if *eaten_id == apple_id
-                    && let Some(snake) = snake.upgrade()
+                    && let (Some(snake), Some(apple)) = (snake.upgrade(), apple.upgrade())
                 {
-                    snake.borrow_mut().add_part();
+                    let position = Board::vacant_position(
+                        snake.borrow().occupied_cells(),
+                        &mut *random.borrow_mut(),
+                    );
+                    match position {
+                        Some(position) => apple.borrow_mut().respawn(position),
+                        None => game.win(),
+                    }
                     game.play_sound(Sound::Coin);
                 }
             }
@@ -102,20 +121,27 @@ fn register_snake_objects(
                     game.end();
                 }
             }
+            SnakeSignal::FoodEaten { .. } => {}
         }
     });
     signals.try_on::<GameSignal>(move |signal, game| {
         match signal {
             GameSignal::Reset => {
                 let bounds = game.playable_bounds();
-                if let Some(snake) = snake_reference.upgrade() {
-                    snake.borrow_mut().respawn(Transform {
+                if let (Some(snake), Some(apple)) =
+                    (snake_reference.upgrade(), apple_reference.upgrade())
+                {
+                    let mut snake = snake.borrow_mut();
+                    snake.respawn(Transform {
                         position: bounds.middle(),
                         rotation: TransformRotation::default(),
                     });
-                }
-                if let Some(apple) = apple_reference.upgrade() {
-                    apple.borrow_mut().respawn(bounds);
+                    let position = Board::vacant_position(
+                        snake.occupied_cells(),
+                        &mut *random.borrow_mut(),
+                    )
+                    .ok_or_else(|| anyhow!("board has no vacant cell for the reset apple"))?;
+                    apple.borrow_mut().respawn(position);
                 }
                 game.start()?;
             }
@@ -129,7 +155,7 @@ fn register_snake_objects(
             GameSignal::Started => {
                 game.play_sound(Sound::Start);
             }
-            GameSignal::Over => {}
+            GameSignal::Over | GameSignal::Won => {}
         }
         Ok(())
     })?;
@@ -148,15 +174,15 @@ mod tests {
         Bounds, GameObject, Move, MoveDirection, Rotation, Vector2Int, assets,
         models::{
             apple::{Apple, AppleSignal},
-            snake::{Snake, SnakeSignal},
+            snake::{Snake, SnakeContact, SnakeSignal},
         },
         signal::{SignalBus, SignalBusBuilder},
     };
 
-    use super::{register_snake_objects, register_snake_scene};
+    use super::register_snake_objects;
     use crate::{
         game::{Game, GameState},
-        infra::input::InputKey,
+        infra::{input::InputKey, random::RandRandomSource},
         test_utils::new_game,
     };
 
@@ -175,13 +201,20 @@ mod tests {
             signals.register::<SnakeSignal>().unwrap(),
         )));
         let apple = Rc::new(RefCell::new(Apple::spawn(
-            game.playable_bounds(),
+            Vector2Int::new(18, 18),
             signals.register::<AppleSignal>().unwrap(),
         )));
         snake
             .borrow_mut()
             .set_position(game.playable_bounds().middle());
-        register_snake_objects(&mut game, &mut signals, snake.clone(), apple.clone()).unwrap();
+        register_snake_objects(
+            &mut game,
+            &mut signals,
+            snake.clone(),
+            apple.clone(),
+            Rc::new(RefCell::new(RandRandomSource::new(0))),
+        )
+        .unwrap();
         let apples_eaten = Rc::new(Cell::new(0));
         signals.on::<AppleSignal>({
             let apples_eaten = apples_eaten.clone();
@@ -220,27 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn grows_once_when_an_apple_is_eaten_before_dispatch() {
-        let TestScene {
-            mut game,
-            mut signals,
-            snake,
-            apple,
-            ..
-        } = new_scene();
-        let size = snake.borrow().hp();
-        apple.borrow_mut().be_eaten();
-        apple.borrow_mut().be_eaten();
-
-        assert_eq!(snake.borrow().hp(), size);
-        game.update(Duration::ZERO, &mut signals).unwrap();
-        assert_eq!(snake.borrow().hp(), size + 1);
-        game.update(Duration::ZERO, &mut signals).unwrap();
-        assert_eq!(snake.borrow().hp(), size + 1);
-    }
-
-    #[test]
-    fn collision_grows_the_snake_and_respawns_the_apple_before_rendering() {
+    fn collision_grows_the_snake_and_respawns_the_apple_on_the_next_update() {
         let TestScene {
             mut game,
             mut signals,
@@ -256,6 +269,7 @@ mod tests {
         game.update(Duration::ZERO, &mut signals).unwrap();
 
         assert_eq!(snake.borrow().hp(), size + 1);
+        game.update(Duration::ZERO, &mut signals).unwrap();
         assert!(!apple.borrow().eaten());
         let position = apple.borrow().position();
         let Bounds { start, end } = game.playable_bounds();
@@ -283,12 +297,9 @@ mod tests {
             apples_eaten,
         } = new_scene();
         let position = Vector2Int::new(10, 10);
-        apple.borrow_mut().respawn(Bounds {
-            start: position,
-            end: Vector2Int::new(11, 11),
-        });
+        apple.borrow_mut().respawn(position);
         snake.borrow_mut().set_position(position);
-        snake.borrow_mut().kill();
+        snake.borrow_mut().on_collision(SnakeContact::Solid);
         let size = snake.borrow().hp();
         game.start().unwrap();
 
@@ -316,7 +327,7 @@ mod tests {
             snake.borrow_mut().add_part();
             snake.borrow_mut().set_position(Vector2Int::new(2, 2));
             if game_over {
-                snake.borrow_mut().kill();
+                snake.borrow_mut().on_collision(SnakeContact::Solid);
                 game.update(Duration::ZERO, &mut signals).unwrap();
             }
 

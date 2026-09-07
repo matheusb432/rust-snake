@@ -1,7 +1,9 @@
 pub mod assets;
+pub mod collision;
 pub mod game_object;
 pub mod models;
 pub mod movement;
+pub mod random;
 pub mod render;
 pub mod signal;
 

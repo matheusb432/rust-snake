@@ -28,6 +28,7 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(1000 / 60);
 pub(crate) enum GameSignal {
     Started,
     Over,
+    Won,
     Reset,
     PauseChanged { is_paused: bool },
 }
@@ -39,6 +40,7 @@ pub(crate) struct Game {
     object_render_order: Vec<GameObjectId>,
     input_handlers: Vec<Box<dyn FnMut(InputKey)>>,
     update_handlers: Vec<Box<dyn FnMut(Duration, Bounds)>>,
+    collision_handlers: Vec<Box<dyn FnMut(Bounds)>>,
     board: Board,
     playable_bounds: Bounds,
     state: GameState,
@@ -55,11 +57,9 @@ impl Game {
             object_render_order: Vec::new(),
             input_handlers: Vec::new(),
             update_handlers: Vec::new(),
+            collision_handlers: Vec::new(),
             board: Board::new(),
-            playable_bounds: Bounds {
-                start: Vector2Int::new(1, 1),
-                end: Vector2Int::new((BOARD_SIZE_X - 2) as i32, (BOARD_SIZE_Y - 2) as i32),
-            },
+            playable_bounds: Board::playable_bounds(),
             state: GameState::NotStarted,
             input_queue: InputQueue::new(),
             audio_client,
@@ -84,6 +84,16 @@ impl Game {
     // handlers run in order of registration
     pub fn on_update(&mut self, handler: impl FnMut(Duration, Bounds) + 'static) {
         self.update_handlers.push(Box::new(handler));
+    }
+
+    pub fn on_collision_check(&mut self, handler: impl FnMut(Bounds) + 'static) {
+        self.collision_handlers.push(Box::new(handler));
+    }
+
+    fn check_collisions(&mut self) {
+        for handler in &mut self.collision_handlers {
+            handler(self.playable_bounds);
+        }
     }
 
     pub fn insert_object<T>(&mut self, object: Rc<RefCell<T>>) -> Result<(), InsertObjectError>
@@ -112,6 +122,10 @@ impl Game {
         self.input_queue.flush()
     }
 
+    /// computes state updates.
+    ///
+    /// each update cycle dispatches up to 2 batches of signals, one before and one after the game
+    /// objects' update handlers.
     pub fn update(
         &mut self,
         delta_time: Duration,
@@ -121,12 +135,19 @@ impl Game {
             return Ok(GameUpdate::Quit);
         }
 
+        self.dispatch_signals(signal_bus)?;
         if self.state() == GameState::InGame {
             for handler in &mut self.update_handlers {
                 handler(delta_time, self.playable_bounds);
             }
+            self.check_collisions();
+            self.dispatch_signals(signal_bus)?;
         }
 
+        Ok(GameUpdate::Continue)
+    }
+
+    fn dispatch_signals(&mut self, signal_bus: &mut SignalBus<Self, anyhow::Error>) -> Result<()> {
         signal_bus
             .dispatch_pending(self)
             .map_err(|error| match error {
@@ -134,9 +155,7 @@ impl Game {
                     anyhow!("signal payload is not a {expected}")
                 }
                 DispatchSignalError::Handler(error) => error,
-            })?;
-
-        Ok(GameUpdate::Continue)
+            })
     }
 
     pub fn render_frame(&self) -> RenderFrame {
@@ -185,6 +204,11 @@ impl Game {
         self.emitter.emit(GameSignal::Over);
     }
 
+    pub fn win(&mut self) {
+        self.state = GameState::Won;
+        self.emitter.emit(GameSignal::Won);
+    }
+
     pub fn unpause(&mut self) -> anyhow::Result<()> {
         if self.state != GameState::Paused {
             bail!("game is not paused, it cannot be unpaused.")
@@ -222,7 +246,7 @@ impl Game {
             }
             let game_state = self.state;
             match (input_key, game_state) {
-                (input_key, GameState::GameOver) => {
+                (input_key, GameState::GameOver | GameState::Won) => {
                     if let InputKey::Reset = input_key {
                         self.reset();
                     }
@@ -241,6 +265,7 @@ impl Game {
                 }
                 (InputKey::Reset, GameState::InGame) => {
                     self.reset();
+                    break;
                 }
                 (InputKey::Reset | InputKey::Other | InputKey::Quit, _) => {}
             }
@@ -271,6 +296,7 @@ pub enum GameState {
     InGame,
     Paused,
     GameOver,
+    Won,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -454,10 +480,10 @@ mod tests {
 
     #[test]
     fn playable_bounds_exclude_the_board_walls() {
-        let bounds = new_game(&mut SignalBusBuilder::<Game>::new()).playable_bounds;
+        let bounds = crate::board::Board::playable_bounds();
 
         assert_eq!(bounds.start, Vector2Int::new(1, 1));
-        assert_eq!(bounds.end, Vector2Int::new(22, 22));
+        assert_eq!(bounds.end, Vector2Int::new(23, 23));
     }
 
     #[test]

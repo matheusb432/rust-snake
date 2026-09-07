@@ -1,8 +1,9 @@
 use std::{collections::VecDeque, time::Duration};
 
 use crate::{
-    GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
-    Transform, Vector2Int, ZIndex, assets, movement::compute_move_forward, signal::SignalEmitter,
+    Bounds, GameObject, GameObjectId, Move, MoveDirection, Render, RenderItem, Rotation, Texture,
+    Transform, Vector2Int, ZIndex, assets, collision::ColliderShape,
+    movement::compute_move_forward, signal::SignalEmitter,
 };
 
 const MOVEMENT_INTERVAL: Duration = Duration::from_millis(100);
@@ -10,6 +11,7 @@ const MOVEMENT_INTERVAL: Duration = Duration::from_millis(100);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnakeSignal {
     Killed { snake_id: GameObjectId },
+    FoodEaten { food_id: GameObjectId },
 }
 
 /// snake player
@@ -39,17 +41,42 @@ impl Snake {
         self.lifecycle = SnakeLifecycle::SPAWNED;
     }
 
-    pub fn kill(&mut self) {
-        let mut did_kill = false;
-        self.lifecycle = match self.lifecycle {
-            SnakeLifecycle::Alive(state) => {
-                did_kill = true;
-                SnakeLifecycle::Dead(state.kill())
-            }
-            dead @ SnakeLifecycle::Dead(_) => dead,
-        };
-        if did_kill {
+    fn kill(&mut self) {
+        if let SnakeLifecycle::Alive(state) = self.lifecycle {
+            self.lifecycle = SnakeLifecycle::Dead(state.kill());
             self.emitter.emit(SnakeSignal::Killed { snake_id: self.id });
+        }
+    }
+
+    pub fn resolve_collisions(
+        &mut self,
+        bounds: Bounds,
+        food: impl IntoIterator<Item = (GameObjectId, Vector2Int)>,
+    ) {
+        if !self.is_alive() {
+            return;
+        }
+        let contact = detect_contact(
+            self.head_position(),
+            self.occupied_cells().skip(1),
+            bounds,
+            food,
+        );
+        if let Some(contact) = contact {
+            self.on_collision(contact);
+        }
+    }
+
+    pub fn on_collision(&mut self, contact: SnakeContact) {
+        if !self.is_alive() {
+            return;
+        }
+        match contact {
+            SnakeContact::Solid => self.kill(),
+            SnakeContact::Food(food_id) => {
+                self.add_part();
+                self.emitter.emit(SnakeSignal::FoodEaten { food_id });
+            }
         }
     }
 
@@ -59,10 +86,6 @@ impl Snake {
         };
 
         state.tick(&mut self.body, &mut self.transform, delta_time);
-
-        if self.part_collides_with_head() {
-            self.kill();
-        }
     }
 
     pub fn hp(&self) -> u16 {
@@ -70,6 +93,7 @@ impl Snake {
     }
 
     pub fn add_part(&mut self) {
+        // TODO: remove checks to see if alive if unnecessary
         if matches!(self.lifecycle, SnakeLifecycle::Alive(_)) {
             self.body.add_part();
         }
@@ -86,32 +110,55 @@ impl Snake {
         self.transform.rotation.look()
     }
 
-    pub fn part_collides_with_head(&self) -> bool {
-        if !matches!(self.lifecycle, SnakeLifecycle::Alive(_)) {
-            return false;
-        }
+    pub fn head_position(&self) -> Vector2Int {
+        self.transform.position
+    }
 
+    pub fn occupied_cells(&self) -> impl Iterator<Item = Vector2Int> + '_ {
         self.body
             .parts
             .iter()
-            // ? the parts' positions are offset from head, so zero means it is in the same space
-            .skip(1)
-            .any(|p| p.position == Vector2Int::ZERO)
+            .map(|part| self.transform.position + part.position)
     }
 
     pub fn is_alive(&self) -> bool {
         matches!(self.lifecycle, SnakeLifecycle::Alive(_))
     }
 
-    pub fn move_in_direction(&mut self, direction: MoveDirection) {
-        let SnakeLifecycle::Alive(mut state) = self.lifecycle else {
+    pub fn request_movement(&mut self, direction: MoveDirection) {
+        let SnakeLifecycle::Alive(state) = &mut self.lifecycle else {
             return;
         };
 
-        self.rotate_to(direction);
-        self.transform.rotation.consume_look();
-        state.move_forward(&mut self.body, &mut self.transform, 1);
-        self.lifecycle = SnakeLifecycle::Alive(state);
+        SnakeState::<Alive>::rotate_to(&mut self.body, &mut self.transform, direction);
+        state.state.movement_requested = true;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnakeContact {
+    Solid,
+    Food(GameObjectId),
+}
+
+pub fn detect_contact(
+    head: Vector2Int,
+    body: impl IntoIterator<Item = Vector2Int>,
+    bounds: Bounds,
+    food: impl IntoIterator<Item = (GameObjectId, Vector2Int)>,
+) -> Option<SnakeContact> {
+    if ColliderShape::OutsideBounds(bounds).contains_cell(head)
+        || body
+            .into_iter()
+            .any(|position| ColliderShape::Cell(position).contains_cell(head))
+    {
+        Some(SnakeContact::Solid)
+    } else {
+        food.into_iter().find_map(|(id, position)| {
+            ColliderShape::Cell(position)
+                .contains_cell(head)
+                .then_some(SnakeContact::Food(id))
+        })
     }
 }
 
@@ -119,6 +166,7 @@ impl Snake {
 struct Alive {
     movement_interval: Duration,
     movement_time_elapsed: Duration,
+    movement_requested: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -145,6 +193,7 @@ impl SnakeState<Alive> {
             state: Alive {
                 movement_interval,
                 movement_time_elapsed: Duration::ZERO,
+                movement_requested: false,
             },
         }
     }
@@ -157,7 +206,8 @@ impl SnakeState<Alive> {
             .min(self.state.movement_interval);
         let did_movement_interval_elapse =
             self.state.movement_time_elapsed == self.state.movement_interval;
-        if did_movement_interval_elapse {
+        let movement_requested = std::mem::take(&mut self.state.movement_requested);
+        if movement_requested || did_movement_interval_elapse {
             self.move_forward(body, transform, 1);
         }
     }
@@ -364,9 +414,10 @@ impl SnakePart {
 mod tests {
     use std::time::Duration;
 
-    use super::{MOVEMENT_INTERVAL, Snake, SnakeBody, SnakeError};
+    use super::{MOVEMENT_INTERVAL, Snake, SnakeBody, SnakeContact, SnakeError, detect_contact};
     use crate::{
-        GameObject, Move, MoveDirection, Rotation, Texture, Vector2Int, assets,
+        Bounds, GameObject, GameObjectId, Move, MoveDirection, Rotation, Texture, Vector2Int,
+        assets,
         test_utils::{collect_render_items, spawn_snake},
     };
 
@@ -395,6 +446,42 @@ mod tests {
                 actual: invalid_max,
             })
         )
+    }
+
+    #[test]
+    fn solid_contacts_take_precedence_over_food() {
+        let bounds = Bounds {
+            start: Vector2Int::new(1, 1),
+            end: Vector2Int::new(23, 23),
+        };
+        let head = Vector2Int::new(10, 10);
+        let tail_previous = Vector2Int::new(9, 10);
+        let food_id = GameObjectId::new();
+        let food_other_id = GameObjectId::new();
+        for (head, body, food, expected) in [
+            (
+                head,
+                vec![head],
+                vec![(food_id, head)],
+                Some(SnakeContact::Solid),
+            ),
+            (
+                Vector2Int::new(23, 10),
+                vec![],
+                vec![(food_id, Vector2Int::new(23, 10))],
+                Some(SnakeContact::Solid),
+            ),
+            (
+                head,
+                vec![tail_previous],
+                vec![(food_other_id, tail_previous), (food_id, head)],
+                Some(SnakeContact::Food(food_id)),
+            ),
+            (head, vec![tail_previous], vec![], None),
+            (tail_previous, vec![head], vec![(food_id, head)], None),
+        ] {
+            assert_eq!(detect_contact(head, body, bounds, food), expected);
+        }
     }
 
     #[test]
@@ -434,7 +521,9 @@ mod tests {
         snake.set_position(position);
 
         snake.tick(almost_one_interval);
-        snake.move_in_direction(MoveDirection::Right);
+        snake.request_movement(MoveDirection::Right);
+        snake.request_movement(MoveDirection::Right);
+        snake.tick(Duration::ZERO);
         snake.tick(one_millisecond);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 10));
@@ -451,7 +540,7 @@ mod tests {
         snake.set_position(position);
         snake.kill();
 
-        snake.move_in_direction(MoveDirection::Down);
+        snake.request_movement(MoveDirection::Down);
         snake.tick(MOVEMENT_INTERVAL);
 
         assert_eq!(snake.position(), position);
@@ -462,7 +551,8 @@ mod tests {
         let mut snake = spawn_snake();
         snake.set_position(Vector2Int::new(10, 10));
         snake.tick(MOVEMENT_INTERVAL);
-        snake.move_in_direction(MoveDirection::Down);
+        snake.request_movement(MoveDirection::Down);
+        snake.tick(Duration::ZERO);
 
         assert_eq!(snake.position(), Vector2Int::new(11, 11));
         assert_eq!(

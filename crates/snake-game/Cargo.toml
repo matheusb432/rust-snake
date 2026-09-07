@@ -9,6 +9,7 @@ snake-core.workspace = true
 anyhow.workspace = true
 crossterm.workspace = true
 rodio.workspace = true
+rand.workspace = true
 
 [[bin]]
 name = "snake"

@@ -1,8 +1,6 @@
-use rand::RngExt;
-
 use crate::{
-    Bounds, GameObject, GameObjectId, Render, RenderItem, Rotation, Transform, Vector2Int, ZIndex,
-    assets, signal::SignalEmitter,
+    GameObject, GameObjectId, Render, RenderItem, Rotation, Transform, Vector2Int, ZIndex, assets,
+    models::snake::SnakeSignal, signal::SignalEmitter,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,58 +15,42 @@ pub struct Apple {
     emitter: SignalEmitter<AppleSignal>,
 }
 impl Apple {
-    pub fn spawn(position_bounds: Bounds, emitter: SignalEmitter<AppleSignal>) -> Self {
-        let mut apple = Self {
+    pub fn spawn(position: Vector2Int, emitter: SignalEmitter<AppleSignal>) -> Self {
+        Self {
             id: GameObjectId::new(),
-            transform: Transform::default(),
+            transform: Transform {
+                position,
+                ..Transform::default()
+            },
             eaten: false,
             emitter,
-        };
-        apple.respawn(position_bounds);
-        apple
+        }
     }
 
-    pub fn be_eaten(&mut self) -> AppleEatenOk {
-        match self.eaten {
-            true => AppleEatenOk::AlreadyEaten,
-            false => {
-                self.eaten = true;
-                self.emitter.emit(AppleSignal::Eaten { apple_id: self.id });
-                AppleEatenOk::Eaten
-            }
+    pub fn on_snake_signal(&mut self, signal: &SnakeSignal) {
+        if let SnakeSignal::FoodEaten { food_id } = signal
+            && *food_id == self.id
+            && !self.eaten
+        {
+            self.eaten = true;
+            self.emitter.emit(AppleSignal::Eaten { apple_id: self.id });
         }
+    }
+
+    pub fn collision_cell(&self) -> Option<(GameObjectId, Vector2Int)> {
+        (!self.eaten).then_some((self.id, self.transform.position))
     }
 
     pub fn eaten(&self) -> bool {
         self.eaten
     }
 
-    // TODO: think of cleaner way to set bounds than to require every fn to have it (maybe a
-    // Rc<T> of game coordinate data that GameObjects can own?)
-    pub fn tick(&mut self, position_bounds: Bounds) {
-        if self.eaten {
-            self.respawn(position_bounds);
-        }
-    }
-
-    pub fn respawn(&mut self, position_bounds: Bounds) {
-        // TODO: make it a parameter to test deterministicslly
-        let mut rng = rand::rng();
-        let Bounds { start, end } = position_bounds;
-
-        // TODO: make it never overlap with snake's position
-        self.transform.position = Vector2Int::new(
-            rng.random_range(start.x..end.x),
-            rng.random_range(start.y..end.y),
-        );
+    pub fn respawn(&mut self, position: Vector2Int) {
+        self.transform.position = position;
         self.eaten = false;
     }
 }
 
-pub enum AppleEatenOk {
-    Eaten,
-    AlreadyEaten,
-}
 impl GameObject for Apple {
     fn rotation(&self) -> Rotation {
         self.transform.rotation.look()
@@ -85,39 +67,14 @@ impl GameObject for Apple {
 
 impl Render for Apple {
     fn visit_render_items(&self, visit: &mut dyn FnMut(RenderItem)) {
+        if self.eaten {
+            return;
+        }
         visit(RenderItem::glyph(
             Vector2Int::default(),
             assets::APPLE,
             self.transform.rotation.look(),
             ZIndex::DEFAULT,
         ));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Apple, AppleSignal};
-    use crate::{Bounds, GameObject, Vector2Int, signal::SignalBusBuilder};
-
-    fn spawn_apple(bounds: Bounds) -> Apple {
-        let mut signals = SignalBusBuilder::<()>::new();
-        let emitter = signals.register::<AppleSignal>().unwrap();
-        Apple::spawn(bounds, emitter)
-    }
-
-    #[test]
-    fn respawn_excludes_the_end_bound() {
-        let position_expected = Vector2Int::new(1, 1);
-        let bounds = Bounds {
-            start: position_expected,
-            end: Vector2Int::new(2, 2),
-        };
-        let mut apple = spawn_apple(bounds);
-
-        for _ in 0..64 {
-            apple.respawn(bounds);
-
-            assert_eq!(apple.position(), position_expected);
-        }
     }
 }
