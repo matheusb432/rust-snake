@@ -2,25 +2,21 @@ use std::{cell::RefCell, rc::Rc};
 
 use anyhow::Result;
 use snake_core::{
-    Vector2Int,
-    models::{snake::SnakeSignal, text::Text},
+    models::{scorebar::Scorebar, snake::SnakeSignal, text::Text},
     signal::SignalBusBuilder,
 };
 
 use crate::{
-    board::{BOARD_SIZE_X, BOARD_SIZE_Y},
+    board::BoardAlignment,
     game::{Game, GameSignal, GameState},
     infra::input::InputKey,
-    status_line::scorebar::Scorebar,
 };
-
-mod scorebar;
 
 pub(crate) fn register_status_line(
     game: &mut Game,
     signals: &mut SignalBusBuilder<Game, anyhow::Error>,
 ) -> Result<()> {
-    let position = Vector2Int::new(0, BOARD_SIZE_Y as i32);
+    let position = game.board().screen_position_below(BoardAlignment::Left, 0);
     let game_over = format!(
         "Game over! Press '{}' to restart.",
         InputKey::RESET_CHARACTER.to_ascii_uppercase()
@@ -47,19 +43,35 @@ pub(crate) fn register_status_line(
         });
     }
 
-    let scorebar_position =
-        Vector2Int::new(((BOARD_SIZE_X - 1) * 2) as i32, BOARD_SIZE_Y as i32 + 1);
+    let scorebar_position = game.board().screen_position_below(BoardAlignment::Right, 1);
     let scorebar = Rc::new(RefCell::new(Scorebar::new(scorebar_position)));
     let scorebar_reference = Rc::downgrade(&scorebar);
     game.insert_object(scorebar)?;
     signals.on::<SnakeSignal>({
-        move |signal, _game| {
+        let scorebar_reference = scorebar_reference.clone();
+        move |signal, _| {
             let Some(scorebar) = scorebar_reference.upgrade() else {
                 return;
             };
             if let SnakeSignal::FoodEaten { .. } = *signal {
                 scorebar.borrow_mut().score.add_unit();
             }
+        }
+    });
+    signals.on::<GameSignal>(move |signal, _| {
+        let Some(scorebar) = scorebar_reference.upgrade() else {
+            return;
+        };
+        match signal {
+            GameSignal::Reset => {
+                // the idea to not save score for resetting, but to save if when dying (on .Over) is
+                // to make death a bit less frustrating
+                scorebar.borrow_mut().reset();
+            }
+            GameSignal::Won | GameSignal::Over => {
+                scorebar.borrow_mut().save_and_reset();
+            }
+            GameSignal::PauseChanged { .. } | GameSignal::Started => {}
         }
     });
     Ok(())

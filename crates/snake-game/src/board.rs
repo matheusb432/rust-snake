@@ -8,6 +8,11 @@ use snake_core::{
 pub(crate) const BOARD_SIZE_X: usize = 24;
 pub(crate) const BOARD_SIZE_Y: usize = 24;
 
+pub(crate) enum BoardAlignment {
+    Left,
+    Right,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BoardPosition {
     Corner,
@@ -41,6 +46,15 @@ impl Board {
 
     pub fn texture_at(&self, board_x: usize, board_y: usize) -> Texture {
         self.inner[board_x][board_y]
+    }
+
+    pub fn screen_position_below(&self, alignment: BoardAlignment, row_offset: i32) -> Vector2Int {
+        let column = match alignment {
+            // below the wall
+            BoardAlignment::Left => 0,
+            BoardAlignment::Right => ((self.inner.len() - 1) * 2) as i32,
+        };
+        Vector2Int::new(column, self.inner[0].len() as i32) + Vector2Int::new(0, row_offset)
     }
 
     fn rotation_at(board_x: usize, board_y: usize) -> Rotation {

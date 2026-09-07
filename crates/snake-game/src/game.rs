@@ -72,6 +72,10 @@ impl Game {
         self.playable_bounds
     }
 
+    pub fn board(&self) -> &Board {
+        &self.board
+    }
+
     pub fn state(&self) -> GameState {
         self.state
     }
