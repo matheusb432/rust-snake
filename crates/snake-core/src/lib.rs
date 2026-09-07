@@ -10,7 +10,7 @@ pub mod signal;
 #[cfg(test)]
 pub(crate) mod test_utils;
 
-use std::ops::Add;
+use std::ops::{Add, AddAssign};
 
 pub use game_object::{GameObject, GameObjectId};
 pub use movement::{Move, MoveDirection};
@@ -88,7 +88,13 @@ impl Add for Vector2Int {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self::new(self.x + rhs.x, self.y + rhs.y)
+        Self::new(self.x.saturating_add(rhs.x), self.y.saturating_add(rhs.y))
+    }
+}
+impl AddAssign for Vector2Int {
+    fn add_assign(&mut self, rhs: Self) {
+        self.x = self.x.saturating_add(rhs.x);
+        self.y = self.y.saturating_add(rhs.y);
     }
 }
 

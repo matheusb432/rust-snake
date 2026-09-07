@@ -1,12 +1,17 @@
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::Result;
-use snake_core::{Vector2Int, models::text::Text, signal::SignalBusBuilder};
+use snake_core::{
+    Vector2Int,
+    models::{snake::SnakeSignal, text::Text},
+    signal::SignalBusBuilder,
+};
 
 use crate::{
-    board::BOARD_SIZE_Y,
+    board::{BOARD_SIZE_X, BOARD_SIZE_Y},
     game::{Game, GameSignal, GameState},
     infra::input::InputKey,
+    status_line::scorebar::Scorebar,
 };
 
 mod scorebar;
@@ -41,7 +46,21 @@ pub(crate) fn register_status_line(
             }
         });
     }
-    // TODO: uncomment once scorebar is impl
-    // game.insert_object(Rc::new(RefCell::new(scorebar::Scorebar::new(position))))?;
+
+    let scorebar_position =
+        Vector2Int::new(((BOARD_SIZE_X - 1) * 2) as i32, BOARD_SIZE_Y as i32 + 1);
+    let scorebar = Rc::new(RefCell::new(Scorebar::new(scorebar_position)));
+    let scorebar_reference = Rc::downgrade(&scorebar);
+    game.insert_object(scorebar)?;
+    signals.on::<SnakeSignal>({
+        move |signal, _game| {
+            let Some(scorebar) = scorebar_reference.upgrade() else {
+                return;
+            };
+            if let SnakeSignal::FoodEaten { .. } = *signal {
+                scorebar.borrow_mut().score.add_unit();
+            }
+        }
+    });
     Ok(())
 }
