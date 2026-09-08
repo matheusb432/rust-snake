@@ -20,7 +20,7 @@ pub struct Snake {
     id: GameObjectId,
     body: SnakeBody,
     transform: Transform,
-    lifecycle: SnakeLifecycle,
+    state: SnakeState,
     emitter: SignalEmitter<SnakeSignal>,
 }
 
@@ -30,7 +30,7 @@ impl Snake {
             id: GameObjectId::new(),
             body: SnakeBody::default(),
             transform: Transform::default(),
-            lifecycle: SnakeLifecycle::SPAWNED,
+            state: SnakeState::alive(),
             emitter,
         }
     }
@@ -38,12 +38,12 @@ impl Snake {
     pub fn respawn(&mut self, transform: Transform) {
         self.body = SnakeBody::default();
         self.transform = transform;
-        self.lifecycle = SnakeLifecycle::SPAWNED;
+        self.state = SnakeState::alive();
     }
 
     fn kill(&mut self) {
-        if let SnakeLifecycle::Alive(state) = self.lifecycle {
-            self.lifecycle = SnakeLifecycle::Dead(state.kill());
+        if self.is_alive() {
+            self.state = SnakeState::Dead;
             self.emitter.emit(SnakeSignal::Killed { snake_id: self.id });
         }
     }
@@ -81,11 +81,8 @@ impl Snake {
     }
 
     pub fn tick(&mut self, delta_time: Duration) {
-        let SnakeLifecycle::Alive(state) = &mut self.lifecycle else {
-            return;
-        };
-
-        state.tick(&mut self.body, &mut self.transform, delta_time);
+        self.state
+            .tick(&mut self.body, &mut self.transform, delta_time);
     }
 
     pub fn hp(&self) -> u16 {
@@ -93,16 +90,11 @@ impl Snake {
     }
 
     pub fn add_part(&mut self) {
-        // TODO: remove checks to see if alive if unnecessary
-        if matches!(self.lifecycle, SnakeLifecycle::Alive(_)) {
-            self.body.add_part();
-        }
+        self.body.add_part();
     }
 
     pub fn set_position(&mut self, position: Vector2Int) {
-        if matches!(self.lifecycle, SnakeLifecycle::Alive(_)) {
-            self.transform.position = position;
-        }
+        self.transform.position = position;
     }
 
     /// direction the snake's head is facing at, dictated by it's rotation
@@ -122,16 +114,12 @@ impl Snake {
     }
 
     pub fn is_alive(&self) -> bool {
-        matches!(self.lifecycle, SnakeLifecycle::Alive(_))
+        self.state.is_alive()
     }
 
     pub fn request_movement(&mut self, direction: MoveDirection) {
-        let SnakeLifecycle::Alive(state) = &mut self.lifecycle else {
-            return;
-        };
-
-        SnakeState::<Alive>::rotate_to(&mut self.body, &mut self.transform, direction);
-        state.state.movement_requested = true;
+        self.state
+            .request_movement(&mut self.body, &mut self.transform, direction);
     }
 }
 
@@ -163,50 +151,39 @@ pub fn detect_contact(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Alive {
-    movement_interval: Duration,
-    movement_time_elapsed: Duration,
-    movement_requested: bool,
+enum SnakeState {
+    Alive {
+        movement_time_elapsed: Duration,
+        movement_requested: bool,
+    },
+    Dead,
 }
-
-#[derive(Debug, Clone, Copy)]
-struct Dead {
-    movement_interval: Duration,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SnakeState<State> {
-    state: State,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SnakeLifecycle {
-    Alive(SnakeState<Alive>),
-    Dead(SnakeState<Dead>),
-}
-impl SnakeLifecycle {
-    pub const SPAWNED: SnakeLifecycle = SnakeLifecycle::Alive(SnakeState::alive(MOVEMENT_INTERVAL));
-}
-impl SnakeState<Alive> {
-    const fn alive(movement_interval: Duration) -> Self {
-        Self {
-            state: Alive {
-                movement_interval,
-                movement_time_elapsed: Duration::ZERO,
-                movement_requested: false,
-            },
+impl SnakeState {
+    const fn alive() -> Self {
+        Self::Alive {
+            movement_time_elapsed: Duration::ZERO,
+            movement_requested: false,
         }
     }
 
+    fn is_alive(&self) -> bool {
+        matches!(self, Self::Alive { .. })
+    }
+
     fn tick(&mut self, body: &mut SnakeBody, transform: &mut Transform, delta_time: Duration) {
-        self.state.movement_time_elapsed = self
-            .state
-            .movement_time_elapsed
+        let Self::Alive {
+            movement_time_elapsed,
+            movement_requested,
+        } = self
+        else {
+            return;
+        };
+
+        *movement_time_elapsed = movement_time_elapsed
             .saturating_add(delta_time)
-            .min(self.state.movement_interval);
-        let did_movement_interval_elapse =
-            self.state.movement_time_elapsed == self.state.movement_interval;
-        let movement_requested = std::mem::take(&mut self.state.movement_requested);
+            .min(MOVEMENT_INTERVAL);
+        let did_movement_interval_elapse = *movement_time_elapsed == MOVEMENT_INTERVAL;
+        let movement_requested = std::mem::take(movement_requested);
         if movement_requested || did_movement_interval_elapse {
             self.move_forward(body, transform, 1);
         }
@@ -226,28 +203,48 @@ impl SnakeState<Alive> {
             transform.position.y - position_previous.y,
         );
         body.move_parts_forward(movement_offset);
-        self.state.movement_time_elapsed = Duration::ZERO;
+        if let Self::Alive {
+            movement_time_elapsed,
+            ..
+        } = self
+        {
+            *movement_time_elapsed = Duration::ZERO;
+        }
     }
 
-    fn rotate_to(body: &mut SnakeBody, transform: &mut Transform, direction: MoveDirection) {
+    fn rotate_to(
+        &mut self,
+        body: &mut SnakeBody,
+        transform: &mut Transform,
+        direction: MoveDirection,
+    ) {
+        if !self.is_alive() {
+            return;
+        }
+
         let look_rotation = transform.rotation.look_to(direction);
         if let Some(head) = body.parts.front_mut() {
             head.rotation = look_rotation;
         }
     }
 
-    const fn kill(self) -> SnakeState<Dead> {
-        SnakeState {
-            state: Dead {
-                movement_interval: self.state.movement_interval,
-            },
+    fn request_movement(
+        &mut self,
+        body: &mut SnakeBody,
+        transform: &mut Transform,
+        direction: MoveDirection,
+    ) {
+        if !self.is_alive() {
+            return;
         }
-    }
-}
 
-impl SnakeState<Dead> {
-    const fn respawn(self) -> SnakeState<Alive> {
-        SnakeState::alive(self.state.movement_interval)
+        self.rotate_to(body, transform, direction);
+        if let Self::Alive {
+            movement_requested, ..
+        } = self
+        {
+            *movement_requested = true;
+        }
     }
 }
 
@@ -280,11 +277,8 @@ impl GameObject for Snake {
 
 impl Move for Snake {
     fn rotate_to(&mut self, direction: MoveDirection) {
-        if !matches!(self.lifecycle, SnakeLifecycle::Alive(_)) {
-            return;
-        }
-
-        SnakeState::<Alive>::rotate_to(&mut self.body, &mut self.transform, direction);
+        self.state
+            .rotate_to(&mut self.body, &mut self.transform, direction);
     }
 }
 

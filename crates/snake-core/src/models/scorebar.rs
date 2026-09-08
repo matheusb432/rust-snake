@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt::{self, Display},
     iter::Sum,
     ops::{Add, AddAssign},
@@ -14,7 +15,7 @@ pub struct Scorebar {
     id: GameObjectId,
     pub score: Score,
     /// saved scores of completed games
-    saved_scores: Vec<Score>,
+    saved_scores: SavedScores,
     position: Vector2Int,
 }
 
@@ -24,19 +25,20 @@ impl Scorebar {
         Self {
             id: GameObjectId::new(),
             score: Score::default(),
-            saved_scores: Vec::with_capacity(Self::SCORES_CAPACITY),
+            saved_scores: SavedScores::with_capacity(Self::SCORES_CAPACITY),
             position,
         }
     }
 
-    // TODO: optimize to own data structure that updates sum and max on mutation, this is read-heavy
-    // and rarely written to.
-    pub fn compute_high_score(&self) -> Score {
-        *self.saved_scores.iter().max().unwrap_or(&Score::EMPTY)
+    pub const fn high_score(&self) -> Score {
+        match self.saved_scores.high() {
+            Some(high_score) => high_score,
+            None => Score::EMPTY,
+        }
     }
 
-    pub fn compute_saved_score_total(&self) -> Score {
-        self.saved_scores.iter().copied().sum()
+    pub const fn saved_score_total(&self) -> Score {
+        self.saved_scores.total()
     }
 
     pub fn reset(&mut self) {
@@ -71,18 +73,28 @@ impl GameObject for Scorebar {
 impl Render for Scorebar {
     fn visit_render_items(&self, visit: &mut dyn FnMut(RenderItem)) {
         let score = self.score;
-        let high_score = self.compute_high_score();
-        let saved_score_total = self.compute_saved_score_total();
+        let high_score = self.high_score();
+        let saved_score_total = self.saved_score_total();
 
-        let content = format!("Score: {score} | High: {high_score} | Total: {saved_score_total}");
-        let column_start = -(content.len() as i32);
-        for (column, character) in (column_start..0).zip(content.chars()) {
-            // TODO: render next to board instead of below
-            visit(RenderItem::screen_glyph(
-                Vector2Int::new(column, 0),
-                Texture::new(character, TextureColor::White),
-                ZIndex::new(1),
-            ));
+        let (score_color, high_score_color) = match score.cmp(&high_score) {
+            Ordering::Greater => (TextureColor::Gold, TextureColor::White),
+            Ordering::Equal => (TextureColor::Gold, TextureColor::Gold),
+            Ordering::Less => (TextureColor::White, TextureColor::Gold),
+        };
+        let rows = [
+            ("Score", score, score_color),
+            ("High", high_score, high_score_color),
+            ("Total", saved_score_total, TextureColor::White),
+        ];
+        for (row, (label, value, color)) in (0..).zip(rows) {
+            let content = format!("{label}: {value}");
+            for (column, character) in (0..).zip(content.chars()) {
+                visit(RenderItem::screen_glyph(
+                    Vector2Int::new(column, row),
+                    Texture::new(character, color),
+                    ZIndex::new(1),
+                ));
+            }
         }
     }
 }
@@ -153,6 +165,40 @@ pub(in crate::models::scorebar) fn format_score(
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SavedScores {
+    values: Vec<Score>,
+    total: Score,
+    high: Option<Score>,
+}
+
+impl SavedScores {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            values: Vec::with_capacity(capacity),
+            total: Score::EMPTY,
+            high: None,
+        }
+    }
+
+    pub fn push(&mut self, score: Score) {
+        self.values.push(score);
+        self.total += score;
+        self.high = Some(self.high.map_or(score, |high| high.max(score)));
+    }
+
+    pub const fn total(&self) -> Score {
+        self.total
+    }
+
+    pub const fn high(&self) -> Option<Score> {
+        self.high
+    }
+
+    pub fn as_slice(&self) -> &[Score] {
+        &self.values
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::models::scorebar::Score;

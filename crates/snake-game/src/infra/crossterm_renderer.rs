@@ -110,6 +110,7 @@ impl TerminalFrame {
 
         terminal_column_last
             .checked_add(1)
+            .and_then(|width| width.checked_add(viewport.columns_right()))
             .context("render viewport width exceeds terminal column capacity")?
             .try_into()
             .context("render viewport width exceeds terminal column capacity")
@@ -138,7 +139,10 @@ impl TerminalFrame {
     }
 
     fn grid_cell_width_columns(&self, position: TerminalPosition) -> usize {
-        if position.column() == 0 || position.column() == self.width_columns.saturating_sub(1) {
+        let board_width_columns = usize::from(self.width_columns) - self.viewport.columns_right();
+        if position.column() == 0
+            || usize::from(position.column()) == board_width_columns.saturating_sub(1)
+        {
             1
         } else {
             GRID_CELL_WIDTH_COLUMNS
@@ -272,6 +276,12 @@ impl<W: Write> CrosstermRenderer<W> {
         match color {
             TextureColor::White => Color::White,
             TextureColor::DarkGreen => Color::DarkGreen,
+            TextureColor::Green => Color::Green,
+            TextureColor::Gold => Color::Rgb {
+                r: 255,
+                g: 215,
+                b: 0,
+            },
             TextureColor::Red => Color::Red,
         }
     }

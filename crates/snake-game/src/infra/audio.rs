@@ -59,7 +59,6 @@ impl Volume {
 pub enum Sound {
     Start,
     Coin,
-    // TODO: implement sfx
     Pause,
     Unpause,
     Impact,

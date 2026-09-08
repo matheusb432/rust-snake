@@ -17,6 +17,8 @@ impl ZIndex {
 pub enum TextureColor {
     White,
     DarkGreen,
+    Green,
+    Gold,
     Red,
 }
 

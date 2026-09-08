@@ -176,7 +176,9 @@ impl Game {
         }
 
         RenderFrame::new(
-            RenderViewport::new(BOARD_SIZE_X, BOARD_SIZE_Y).with_rows_bottom(2),
+            RenderViewport::new(BOARD_SIZE_X, BOARD_SIZE_Y)
+                .with_rows_bottom(1)
+                .with_columns_right(20),
             cells,
         )
     }

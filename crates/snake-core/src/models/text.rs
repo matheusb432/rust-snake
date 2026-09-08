@@ -12,7 +12,7 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(position: Vector2Int, content: &str) -> Self {
+    pub fn new(position: Vector2Int, content: &str, color: TextureColor) -> Self {
         Self {
             id: GameObjectId::new(),
             position,
@@ -24,7 +24,7 @@ impl Text {
                     } else {
                         '?'
                     };
-                    Texture::new(character, TextureColor::White)
+                    Texture::new(character, color)
                 })
                 .collect(),
             visible: true,
@@ -55,8 +55,6 @@ impl Render for Text {
         if !self.visible {
             return;
         }
-        // TODO: study a better solution, this is only to avoid casting usize to i32, could be
-        // simpler with 'glyphs.iter().enumerate()' if not for that
         for (column, texture) in (0..i32::MAX).zip(&self.glyphs) {
             visit(RenderItem::screen_glyph(
                 Vector2Int::new(column, 0),

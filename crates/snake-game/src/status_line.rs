@@ -2,12 +2,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use anyhow::Result;
 use snake_core::{
+    TextureColor, Vector2Int,
     models::{scorebar::Scorebar, snake::SnakeSignal, text::Text},
     signal::SignalBusBuilder,
 };
 
 use crate::{
-    board::BoardAlignment,
     game::{Game, GameSignal, GameState},
     infra::input::InputKey,
 };
@@ -16,7 +16,7 @@ pub(crate) fn register_status_line(
     game: &mut Game,
     signals: &mut SignalBusBuilder<Game, anyhow::Error>,
 ) -> Result<()> {
-    let position = game.board().screen_position_below(BoardAlignment::Left, 0);
+    let position = game.board().screen_position_below(0);
     let game_over = format!(
         "Game over! Press '{}' to restart.",
         InputKey::RESET_CHARACTER.to_ascii_uppercase()
@@ -25,13 +25,17 @@ pub(crate) fn register_status_line(
         "You won! Press '{}' to restart.",
         InputKey::RESET_CHARACTER.to_ascii_uppercase()
     );
-    for (content, state) in [
-        ("Press any key to start", GameState::NotStarted),
-        ("Paused", GameState::Paused),
-        (game_over.as_str(), GameState::GameOver),
-        (won.as_str(), GameState::Won),
+    for (content, state, color) in [
+        (
+            "Press any key to start",
+            GameState::NotStarted,
+            TextureColor::White,
+        ),
+        ("Paused", GameState::Paused, TextureColor::White),
+        (game_over.as_str(), GameState::GameOver, TextureColor::Red),
+        (won.as_str(), GameState::Won, TextureColor::Green),
     ] {
-        let mut text = Text::new(position, content);
+        let mut text = Text::new(position, content, color);
         text.set_visible(game.state() == state);
         let text = Rc::new(RefCell::new(text));
         let text_reference = Rc::downgrade(&text);
@@ -43,7 +47,7 @@ pub(crate) fn register_status_line(
         });
     }
 
-    let scorebar_position = game.board().screen_position_below(BoardAlignment::Right, 1);
+    let scorebar_position = game.board().screen_position_right(Vector2Int::new(1, 1));
     let scorebar = Rc::new(RefCell::new(Scorebar::new(scorebar_position)));
     let scorebar_reference = Rc::downgrade(&scorebar);
     game.insert_object(scorebar)?;

@@ -6,6 +6,7 @@ pub(crate) struct RenderViewport {
     width_cells: usize,
     height_cells: usize,
     rows_bottom: usize,
+    columns_right: usize,
 }
 
 impl RenderViewport {
@@ -14,6 +15,7 @@ impl RenderViewport {
             width_cells,
             height_cells,
             rows_bottom: 0,
+            columns_right: 0,
         }
     }
 
@@ -32,6 +34,15 @@ impl RenderViewport {
 
     pub(crate) const fn rows_bottom(self) -> usize {
         self.rows_bottom
+    }
+
+    pub(crate) const fn with_columns_right(mut self, columns: usize) -> Self {
+        self.columns_right = columns;
+        self
+    }
+
+    pub(crate) const fn columns_right(self) -> usize {
+        self.columns_right
     }
 }
 
