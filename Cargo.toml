@@ -13,3 +13,19 @@ rand = { version = "0.10.2", default-features = false, features = ["thread_rng"]
 
 crossterm = "0.29.0"
 rodio = { version = "0.22.2", default-features = false, features = ["playback", "flac"] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -2 }
+pedantic = { level = "warn", priority = -2 }
+correctness = { level = "deny", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+dbg_macro = "warn"
+disallowed_methods = "deny"
+collection_is_never_read = "warn"
+missing_errors_doc = "allow"
+struct_field_names = "allow"
