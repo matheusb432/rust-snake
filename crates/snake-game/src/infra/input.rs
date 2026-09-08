@@ -8,19 +8,6 @@ use snake_core::MoveDirection;
 #[derive(Debug, Clone)]
 pub struct InputQueue(VecDeque<InputKey>);
 
-pub enum InputQueuePushOk {
-    RemovedFirst(InputKey),
-    DidNotRemove,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputQueueState {
-    Empty,
-    Full,
-    /// has N spaces open
-    VacantWith(usize),
-}
-
 impl InputQueue {
     pub const MAX_ITEMS: usize = 10;
     pub fn new() -> Self {
@@ -43,15 +30,10 @@ impl InputQueue {
     }
 
     /// will remove first item if size is at max
-    pub fn push_back(&mut self, value: InputKey) -> InputQueuePushOk {
+    pub fn push_back(&mut self, value: InputKey) {
         // best to remove first else it could exceed capacity and resize
-        let removed_item = self.pop_if_full();
+        self.pop_if_full();
         self.0.push_back(value);
-
-        match removed_item {
-            Some(removed_item) => InputQueuePushOk::RemovedFirst(removed_item),
-            None => InputQueuePushOk::DidNotRemove,
-        }
     }
 
     fn pop_if_full(&mut self) -> Option<InputKey> {
@@ -59,19 +41,6 @@ impl InputQueue {
             self.0.pop_front()
         } else {
             None
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
-
-    pub fn get_state(&self) -> InputQueueState {
-        let vacant_slots = Self::MAX_ITEMS - self.0.len();
-        match vacant_slots {
-            Self::MAX_ITEMS => InputQueueState::Empty,
-            0 => InputQueueState::Full,
-            vacant_slots => InputQueueState::VacantWith(vacant_slots),
         }
     }
 }

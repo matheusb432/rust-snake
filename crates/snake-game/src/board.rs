@@ -1,3 +1,5 @@
+#![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+
 use std::{array, num::NonZeroUsize};
 
 use snake_core::{

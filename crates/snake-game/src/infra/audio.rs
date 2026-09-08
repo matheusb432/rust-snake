@@ -1,6 +1,5 @@
 use std::io::Cursor;
 
-use anyhow::bail;
 use rodio::{
     Decoder, DeviceSinkBuilder, DeviceSinkError, MixerDeviceSink, Source, decoder::DecoderError,
 };
@@ -35,21 +34,7 @@ impl RodioAudioClient {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Volume(f32);
 impl Volume {
-    pub const FULL: Self = Self(1.0);
     pub const HALF: Self = Self(0.5);
-    pub const SILENT: Self = Self(0.0);
-    pub const MIN: f32 = 0_f32;
-    pub const MAX: f32 = 1_f32;
-
-    pub fn new(value: f32) -> anyhow::Result<Self> {
-        if value < Self::MIN {
-            bail!("volume too low, min is {}", Self::MIN)
-        } else if value > Self::MAX {
-            bail!("volume too high, max is {}", Self::MAX)
-        }
-
-        Ok(Self(value))
-    }
 
     pub fn into_inner(self) -> f32 {
         self.0

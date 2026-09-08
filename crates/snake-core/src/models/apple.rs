@@ -15,6 +15,7 @@ pub struct Apple {
     emitter: SignalEmitter<AppleSignal>,
 }
 impl Apple {
+    #[must_use]
     pub fn spawn(position: Vector2Int, emitter: SignalEmitter<AppleSignal>) -> Self {
         Self {
             id: GameObjectId::new(),
@@ -37,10 +38,12 @@ impl Apple {
         }
     }
 
+    #[must_use]
     pub fn collision_cell(&self) -> Option<(GameObjectId, Vector2Int)> {
         (!self.eaten).then_some((self.id, self.transform.position))
     }
 
+    #[must_use]
     pub fn eaten(&self) -> bool {
         self.eaten
     }

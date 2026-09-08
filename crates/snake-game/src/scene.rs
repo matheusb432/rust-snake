@@ -1,8 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+};
 
 use anyhow::{Result, anyhow};
 use snake_core::{
-    GameObject, Transform, TransformRotation,
+    GameObject, GameObjectId, Transform, TransformRotation,
     models::{
         apple::{Apple, AppleSignal},
         snake::{Snake, SnakeSignal},
@@ -52,78 +55,111 @@ fn register_snake_objects(
     game.insert_object(snake)?;
     game.insert_object(apple)?;
 
-    game.on_input({
-        let snake = snake_reference.clone();
-        move |input| {
-            if let (InputKey::Move(direction), Some(snake)) = (input, snake.upgrade()) {
-                snake.borrow_mut().request_movement(direction);
-            }
+    register_snake_input_handler(game, snake_reference.clone());
+    register_snake_update_handler(game, snake_reference.clone());
+    register_snake_collision_handler(game, snake_reference.clone(), apple_reference.clone());
+    register_apple_signal_handler(
+        signals,
+        snake_reference.clone(),
+        apple_reference.clone(),
+        apple_id,
+        random.clone(),
+    );
+    register_snake_signal_handler(signals, apple_reference.clone());
+    register_killed_signal_handler(signals, snake_reference.clone(), snake_id);
+    register_game_signal_handler(signals, snake_reference, apple_reference, random)?;
+    Ok(())
+}
+
+fn register_snake_input_handler(game: &mut Game, snake_reference: Weak<RefCell<Snake>>) {
+    game.on_input(move |input| {
+        if let (InputKey::Move(direction), Some(snake)) = (input, snake_reference.upgrade()) {
+            snake.borrow_mut().request_movement(direction);
         }
     });
-    game.on_update({
-        let snake = snake_reference.clone();
-        move |delta_time, _| {
-            if let Some(snake) = snake.upgrade() {
-                snake.borrow_mut().tick(delta_time);
-            }
+}
+
+fn register_snake_update_handler(game: &mut Game, snake_reference: Weak<RefCell<Snake>>) {
+    game.on_update(move |delta_time, _| {
+        if let Some(snake) = snake_reference.upgrade() {
+            snake.borrow_mut().tick(delta_time);
         }
     });
-    game.on_collision_check({
-        let snake = snake_reference.clone();
-        let apple = apple_reference.clone();
-        move |bounds| {
-            if let Some(snake) = snake.upgrade() {
-                let food = apple
-                    .upgrade()
-                    .and_then(|apple| apple.borrow().collision_cell());
-                snake.borrow_mut().resolve_collisions(bounds, food);
-            }
+}
+
+fn register_snake_collision_handler(
+    game: &mut Game,
+    snake_reference: Weak<RefCell<Snake>>,
+    apple_reference: Weak<RefCell<Apple>>,
+) {
+    game.on_collision_check(move |bounds| {
+        if let Some(snake) = snake_reference.upgrade() {
+            let food = apple_reference
+                .upgrade()
+                .and_then(|apple| apple.borrow().collision_cell());
+            snake.borrow_mut().resolve_collisions(bounds, food);
         }
     });
-    signals.on::<SnakeSignal>({
-        let apple = apple_reference.clone();
-        move |signal, _| {
-            if let Some(apple) = apple.upgrade() {
-                apple.borrow_mut().on_snake_signal(signal);
-            }
+}
+
+fn register_snake_signal_handler(
+    signals: &mut SignalBusBuilder<Game, anyhow::Error>,
+    apple_reference: Weak<RefCell<Apple>>,
+) {
+    signals.on::<SnakeSignal>(move |signal, _| {
+        if let Some(apple) = apple_reference.upgrade() {
+            apple.borrow_mut().on_snake_signal(signal);
         }
     });
-    signals.on::<AppleSignal>({
-        let snake = snake_reference.clone();
-        let apple = apple_reference.clone();
-        let random = random.clone();
-        move |signal, game| match signal {
-            AppleSignal::Eaten { apple_id: eaten_id } => {
-                if *eaten_id == apple_id
-                    && let (Some(snake), Some(apple)) = (snake.upgrade(), apple.upgrade())
-                {
-                    let position = Board::vacant_position(
-                        snake.borrow().occupied_cells(),
-                        &mut *random.borrow_mut(),
-                    );
-                    match position {
-                        Some(position) => apple.borrow_mut().respawn(position),
-                        None => game.win(),
-                    }
-                    game.play_sound(Sound::Coin);
-                }
+}
+
+fn register_apple_signal_handler(
+    signals: &mut SignalBusBuilder<Game, anyhow::Error>,
+    snake_reference: Weak<RefCell<Snake>>,
+    apple_reference: Weak<RefCell<Apple>>,
+    apple_id: GameObjectId,
+    random: Rc<RefCell<dyn RandomSource>>,
+) {
+    signals.on::<AppleSignal>(move |signal, game| match signal {
+        AppleSignal::Eaten { apple_id: eaten_id }
+            if *eaten_id == apple_id
+                && let (Some(snake), Some(apple)) =
+                    (snake_reference.upgrade(), apple_reference.upgrade()) =>
+        {
+            let position =
+                Board::vacant_position(snake.borrow().occupied_cells(), &mut *random.borrow_mut());
+            match position {
+                Some(position) => apple.borrow_mut().respawn(position),
+                None => game.win(),
             }
+            game.play_sound(Sound::Coin);
         }
+        AppleSignal::Eaten { .. } => {}
     });
-    signals.on::<SnakeSignal>({
-        let snake = snake_reference.clone();
-        move |signal, game| match signal {
-            SnakeSignal::Killed {
-                snake_id: killed_id,
-            } => {
-                if *killed_id == snake_id && snake.upgrade().is_some() {
-                    game.play_sound(Sound::Impact);
-                    game.end();
-                }
-            }
-            SnakeSignal::FoodEaten { .. } => {}
+}
+
+fn register_killed_signal_handler(
+    signals: &mut SignalBusBuilder<Game, anyhow::Error>,
+    snake_reference: Weak<RefCell<Snake>>,
+    snake_id: GameObjectId,
+) {
+    signals.on::<SnakeSignal>(move |signal, game| match signal {
+        SnakeSignal::Killed {
+            snake_id: killed_id,
+        } if *killed_id == snake_id && snake_reference.upgrade().is_some() => {
+            game.play_sound(Sound::Impact);
+            game.end();
         }
+        SnakeSignal::Killed { .. } | SnakeSignal::FoodEaten { .. } => {}
     });
+}
+
+fn register_game_signal_handler(
+    signals: &mut SignalBusBuilder<Game, anyhow::Error>,
+    snake_reference: Weak<RefCell<Snake>>,
+    apple_reference: Weak<RefCell<Apple>>,
+    random: Rc<RefCell<dyn RandomSource>>,
+) -> Result<()> {
     signals.try_on::<GameSignal>(move |signal, game| {
         match signal {
             GameSignal::Reset => {

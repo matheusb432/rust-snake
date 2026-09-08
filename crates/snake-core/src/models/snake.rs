@@ -1,3 +1,5 @@
+#![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+
 use std::{collections::VecDeque, time::Duration};
 
 use crate::{
@@ -25,6 +27,7 @@ pub struct Snake {
 }
 
 impl Snake {
+    #[must_use]
     pub fn spawn(emitter: SignalEmitter<SnakeSignal>) -> Self {
         Self {
             id: GameObjectId::new(),
@@ -85,6 +88,7 @@ impl Snake {
             .tick(&mut self.body, &mut self.transform, delta_time);
     }
 
+    #[must_use]
     pub fn hp(&self) -> u16 {
         self.body.size()
     }
@@ -98,10 +102,12 @@ impl Snake {
     }
 
     /// direction the snake's head is facing at, dictated by it's rotation
+    #[must_use]
     pub fn head_direction(&self) -> Rotation {
         self.transform.rotation.look()
     }
 
+    #[must_use]
     pub fn head_position(&self) -> Vector2Int {
         self.transform.position
     }
@@ -113,6 +119,7 @@ impl Snake {
             .map(|part| self.transform.position + part.position)
     }
 
+    #[must_use]
     pub fn is_alive(&self) -> bool {
         self.state.is_alive()
     }
@@ -346,9 +353,8 @@ impl SnakeBody {
         self.parts.push_back(part_new);
     }
 
-    // TODO refactor
     fn size(&self) -> u16 {
-        u16::try_from(self.parts.len()).expect("snake body size cannot exceed its u16 maximum")
+        u16::try_from(self.parts.len()).unwrap_or(u16::MAX)
     }
 
     fn parts_textures(&self) -> impl Iterator<Item = (Vector2Int, Texture, Rotation)> + '_ {
@@ -395,6 +401,7 @@ pub struct SnakePart {
 impl SnakePart {
     pub const HEAD: Texture = assets::SNAKE_HEAD;
     pub const PART: Texture = assets::SNAKE_PART;
+    #[must_use]
     pub const fn default_part() -> Self {
         Self {
             position: Vector2Int::ZERO,
@@ -439,7 +446,7 @@ mod tests {
                 max: SnakeBody::MAX_SIZE,
                 actual: invalid_max,
             })
-        )
+        );
     }
 
     #[test]
@@ -511,7 +518,7 @@ mod tests {
         let mut snake = spawn_snake();
         let position = Vector2Int::new(10, 10);
         let one_millisecond = Duration::from_millis(1);
-        let almost_one_interval = MOVEMENT_INTERVAL - one_millisecond;
+        let almost_one_interval = MOVEMENT_INTERVAL.checked_sub(one_millisecond).unwrap();
         snake.set_position(position);
 
         snake.tick(almost_one_interval);
@@ -618,23 +625,20 @@ mod tests {
     fn render_positions_local(snake: &Snake) -> Vec<Vector2Int> {
         collect_render_items(snake)
             .into_iter()
-            .map(|item| item.position_local())
+            .map(crate::render::RenderItem::position_local)
             .collect()
     }
 
     fn render_textures(snake: &Snake) -> Vec<Texture> {
         collect_render_items(snake)
             .into_iter()
-            .map(|item| item.texture())
+            .map(crate::render::RenderItem::texture)
             .collect()
     }
 
     #[track_caller]
     fn assert_head_looks(snake: &Snake, expected_rotation: Rotation) {
-        let head = collect_render_items(snake)
-            .into_iter()
-            .next()
-            .expect("a snake should render a head");
+        let head = collect_render_items(snake).into_iter().next().unwrap();
 
         assert_eq!(
             (head.texture(), head.rotation()),

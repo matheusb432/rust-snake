@@ -66,15 +66,17 @@ pub struct Vector2Int {
 impl Vector2Int {
     pub const ZERO: Self = Vector2Int { x: 0, y: 0 };
 
+    #[must_use]
     pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }
 
     /// calculates midpoint rounded down
+    #[must_use]
     pub fn midpoint(self, rhs: Self) -> Self {
         Self {
-            x: (self.x + rhs.x) / 2,
-            y: (self.y + rhs.y) / 2,
+            x: i32::midpoint(self.x, rhs.x),
+            y: i32::midpoint(self.y, rhs.y),
         }
     }
 }
@@ -104,6 +106,7 @@ pub struct Bounds {
     pub end: Vector2Int,
 }
 impl Bounds {
+    #[must_use]
     pub fn middle(&self) -> Vector2Int {
         self.start.midpoint(self.end)
     }
@@ -118,14 +121,17 @@ impl Rotation {
     pub const UP: Rotation = Self(270);
     pub const DEGREES_UPPER: u16 = 360;
 
+    #[must_use]
     pub fn new(value: u16) -> Self {
         Self(value.rem_euclid(Self::DEGREES_UPPER))
     }
 
+    #[must_use]
     pub fn rotate(self, rotation: Rotation) -> Self {
         Self::new(self.into_inner() + rotation.into_inner())
     }
 
+    #[must_use]
     pub const fn into_inner(self) -> u16 {
         self.0
     }

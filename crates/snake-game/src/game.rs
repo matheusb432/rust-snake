@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use snake_core::{
-    Bounds, GameObject, GameObjectId, Vector2Int,
+    Bounds, GameObject, GameObjectId, MoveDirection, Vector2Int,
     signal::{DispatchSignalError, SignalBus, SignalEmitter},
 };
 
@@ -31,6 +31,34 @@ pub(crate) enum GameSignal {
     Won,
     Reset,
     PauseChanged { is_paused: bool },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputAction {
+    Move {
+        direction: MoveDirection,
+        unpause: bool,
+    },
+    TogglePause,
+    ResetAndStop,
+    Stop,
+    Ignore,
+}
+
+#[inline]
+const fn classify_input(input_key: InputKey, game_state: GameState) -> InputAction {
+    match (game_state, input_key) {
+        (GameState::GameOver | GameState::Won | GameState::InGame, InputKey::Reset) => {
+            InputAction::ResetAndStop
+        }
+        (GameState::GameOver | GameState::Won, _) => InputAction::Stop,
+        (_, InputKey::Move(direction)) => InputAction::Move {
+            direction,
+            unpause: matches!(game_state, GameState::Paused),
+        },
+        (_, InputKey::Pause) => InputAction::TogglePause,
+        (_, InputKey::Reset | InputKey::Other | InputKey::Quit) => InputAction::Ignore,
+    }
 }
 
 pub(crate) struct Game {
@@ -167,11 +195,10 @@ impl Game {
         append_render_cells(&mut cells, Vector2Int::default(), &self.board);
 
         for id in &self.object_render_order {
-            let object = self
-                .objects
-                .get(id)
-                .expect("render order must contain only inserted game objects")
-                .borrow();
+            let Some(object) = self.objects.get(id) else {
+                continue;
+            };
+            let object = object.borrow();
             append_render_cells(&mut cells, object.position(), &*object);
         }
 
@@ -244,48 +271,46 @@ impl Game {
             if input_key == InputKey::Quit {
                 return Ok(GameUpdate::Quit);
             }
-            if self.state == GameState::NotStarted {
+            let was_not_started = self.state == GameState::NotStarted;
+            if was_not_started {
                 self.start()?;
-                if !matches!(input_key, InputKey::Move(_)) {
-                    continue;
-                }
             }
-            let game_state = self.state;
-            match (input_key, game_state) {
-                (input_key, GameState::GameOver | GameState::Won) => {
-                    if let InputKey::Reset = input_key {
-                        self.reset();
-                    }
-                    break;
-                }
-                (InputKey::Move(direction), game_state) => {
-                    if game_state == GameState::Paused {
-                        self.unpause()?;
-                    }
-                    for handler in &mut self.input_handlers {
-                        handler(InputKey::Move(direction));
-                    }
-                }
-                (InputKey::Pause, _) => {
-                    self.toggle_pause();
-                }
-                (InputKey::Reset, GameState::InGame) => {
+            if was_not_started && !matches!(input_key, InputKey::Move(_)) {
+                continue;
+            }
+
+            match classify_input(input_key, self.state) {
+                InputAction::Stop => break,
+                InputAction::ResetAndStop => {
                     self.reset();
                     break;
                 }
-                (InputKey::Reset | InputKey::Other | InputKey::Quit, _) => {}
+                InputAction::Move { direction, unpause } => {
+                    self.apply_movement_input(direction, unpause)?;
+                }
+                InputAction::TogglePause => {
+                    self.toggle_pause();
+                }
+                InputAction::Ignore => {}
             }
         }
 
         Ok(GameUpdate::Continue)
     }
 
+    fn apply_movement_input(&mut self, direction: MoveDirection, unpause: bool) -> Result<()> {
+        if unpause {
+            self.unpause()?;
+        }
+        for handler in &mut self.input_handlers {
+            handler(InputKey::Move(direction));
+        }
+        Ok(())
+    }
+
     pub fn play_sound(&self, sound: Sound) {
-        match self.audio_client.play_sound(sound) {
-            Ok(_) => {}
-            Err(e) => {
-                todo!("handle sound err: {e}")
-            }
+        if let Err(error) = self.audio_client.play_sound(sound) {
+            eprintln!("failed to play sound: {error}");
         }
     }
 }

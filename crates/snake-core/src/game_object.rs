@@ -13,6 +13,7 @@ pub trait GameObject: Render {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct GameObjectId(Uuid);
 impl GameObjectId {
+    #[must_use]
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }

@@ -13,6 +13,7 @@ pub trait Move {
 }
 
 /// (0,0) is top-left, so down is negative `y`
+#[must_use]
 pub fn compute_move_forward(
     position: Vector2Int,
     rotation: Rotation,
@@ -30,6 +31,7 @@ pub fn compute_move_forward(
 }
 
 /// computes some new rotation by input, or none if no change to it is necessary.
+#[must_use]
 pub fn compute_new_rotation(direction: MoveDirection, rotation: Rotation) -> Option<Rotation> {
     match (direction, rotation) {
         (MoveDirection::Up, Rotation::RIGHT | Rotation::LEFT) => Some(Rotation::UP),

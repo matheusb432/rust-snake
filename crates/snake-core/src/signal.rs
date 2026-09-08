@@ -63,6 +63,7 @@ pub struct SignalBusBuilder<Context, HandlerError = Infallible> {
 }
 
 impl<Context, HandlerError> SignalBusBuilder<Context, HandlerError> {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             signals_pending: Rc::new(Cell::new(VecDeque::new())),
@@ -129,6 +130,7 @@ impl<Context, HandlerError> SignalBusBuilder<Context, HandlerError> {
         Ok(())
     }
 
+    #[must_use]
     pub fn build(self) -> SignalBus<Context, HandlerError> {
         SignalBus {
             signals_pending: self.signals_pending,

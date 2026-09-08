@@ -616,7 +616,7 @@ mod tests {
 
     fn count_texture(bytes: &[u8], texture: Texture, rotation: Rotation) -> usize {
         std::str::from_utf8(bytes)
-            .expect("Crossterm test output should be valid UTF-8")
+            .unwrap()
             .chars()
             .filter(|character| *character == texture.character(rotation))
             .count()

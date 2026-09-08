@@ -9,6 +9,7 @@ pub enum ColliderShape {
 }
 
 impl ColliderShape {
+    #[must_use]
     pub fn contains_cell(self, position: Vector2Int) -> bool {
         match self {
             Self::Cell(cell) => cell == position,

@@ -12,6 +12,7 @@ pub struct Text {
 }
 
 impl Text {
+    #[must_use]
     pub fn new(position: Vector2Int, content: &str, color: TextureColor) -> Self {
         Self {
             id: GameObjectId::new(),

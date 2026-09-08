@@ -21,6 +21,7 @@ pub struct Scorebar {
 
 impl Scorebar {
     const SCORES_CAPACITY: usize = 100;
+    #[must_use]
     pub fn new(position: Vector2Int) -> Self {
         Self {
             id: GameObjectId::new(),
@@ -30,6 +31,7 @@ impl Scorebar {
         }
     }
 
+    #[must_use]
     pub const fn high_score(&self) -> Score {
         match self.saved_scores.high() {
             Some(high_score) => high_score,
@@ -37,6 +39,7 @@ impl Scorebar {
         }
     }
 
+    #[must_use]
     pub const fn saved_score_total(&self) -> Score {
         self.saved_scores.total()
     }
@@ -106,6 +109,7 @@ impl Score {
     pub const EMPTY: Self = Score(0);
     pub const UNIT: Self = Score(100);
 
+    #[must_use]
     pub fn new(value: u32) -> Self {
         Self(value)
     }
@@ -116,7 +120,7 @@ impl Score {
     }
 
     pub(in crate::models::scorebar) fn reset(&mut self) {
-        self.0 = Self::default().0
+        self.0 = Self::default().0;
     }
 }
 impl Default for Score {
@@ -138,9 +142,9 @@ impl Add for Score {
     }
 }
 impl Sum for Score {
-    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         let mut sum = Self::EMPTY;
-        while let Some(score) = iter.next() {
+        for score in iter {
             sum += score;
         }
         sum
@@ -173,6 +177,7 @@ pub struct SavedScores {
 }
 
 impl SavedScores {
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             values: Vec::with_capacity(capacity),
@@ -187,14 +192,17 @@ impl SavedScores {
         self.high = Some(self.high.map_or(score, |high| high.max(score)));
     }
 
+    #[must_use]
     pub const fn total(&self) -> Score {
         self.total
     }
 
+    #[must_use]
     pub const fn high(&self) -> Option<Score> {
         self.high
     }
 
+    #[must_use]
     pub fn as_slice(&self) -> &[Score] {
         &self.values
     }
