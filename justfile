@@ -37,17 +37,6 @@ fix *args:
 test *args:
     cargo nextest run "$@"
 
-# Report missing tools and native packages without installing them.
-[group('setup')]
-doctor:
-    @mise ls --local --missing --locked --no-header
-    @mise bootstrap packages status --missing
-
-# Install the declared native packages and pinned tools, then prepare the checkout.
-[group('setup')]
-bootstrap *args:
-    mise bootstrap --yes "$@"
-
 # Fetch the Rust dependencies for this checkout.
 [group('setup')]
 setup *args:

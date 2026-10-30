@@ -4,10 +4,9 @@ cli snake game built with rust with a mini game engine I built to practice core 
 
 ## Setup
 
-have the necessary deps at [mise.toml](mise.toml), you can also run:
+dev tools come from the machine's global toolset on PATH and native deps (libasound2-dev, pkg-config) from its system packages, both provisioned by boxio. to prepare the checkout, run:
 
 ```bash
-just bootstrap # if necessary, installs box deps
 just setup
 ```
 
